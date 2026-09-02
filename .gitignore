@@ -1,0 +1,14 @@
+__pycache__/
+.DS_Store
+.venv/
+*.py[cod]
+*.tmp
+*.log
+dist/
+.pytest_cache/
+apm_modules/
+*.pdf
+*.future_work.json
+*.llm_ocr.txt
+_future_work_debug/
+_ocr/

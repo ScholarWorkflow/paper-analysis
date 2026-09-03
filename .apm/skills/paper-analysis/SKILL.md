@@ -87,7 +87,7 @@ For saved local-PDF `mode: full`, include these instructions when spawning the r
    ```
 
    `source_anchors` and `confidence` are optional. Never put `future_work_ids` in the model draft; those IDs are joined deterministically from the validated future-work sidecar.
-3. Preserve the existing full-analysis Markdown quality and future-work evidence chain. Run `future_work.py prepare` for the source PDF before/alongside analysis, then after the Markdown exists run `future_work.py upgrade-full-sidecar` so `<analysis>.md.future_work.json` is validated against prepared candidates and contains stable IDs/page numbers.
+3. Preserve the existing full-analysis Markdown quality and future-work evidence chain. Run `future_work.py prepare` for the source PDF before/alongside analysis. After synthesis, first write the completed Markdown to its final `<analysis>.md` path, then run `future_work.py upgrade-full-sidecar` so `<analysis>.md.future_work.json` is validated against prepared candidates and contains stable IDs/page numbers.
 4. Only after that future-work sidecar has `status: ok`, run:
 
    ```bash

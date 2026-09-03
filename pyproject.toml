@@ -4,5 +4,8 @@ version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = ["pdf-processing-core"]
 
+[dependency-groups]
+dev = ["pytest>=8.3,<9"]
+
 [tool.uv.sources]
 pdf-processing-core = { git = "https://github.com/ScholarWorkflow/pdf-processing-core.git", branch = "main" }

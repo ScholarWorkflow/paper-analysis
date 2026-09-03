@@ -157,6 +157,34 @@ class FutureWorkTests(unittest.TestCase):
         self.assertEqual(merged["ocr_required_pages"], [])
         self.assertTrue(any("OCR text" in item["quote"] for item in merged["candidates"]))
 
+    def test_13b_merged_ocr_candidate_upgrades_full_sidecar(self):
+        debug = self.dir / "debug-ocr"
+        debug.mkdir()
+        prepared = dict(self.prepared)
+        prepared["ocr_required_pages"] = [3]
+        prepared_path = debug / "prepare.json"
+        prepared_path.write_text(json.dumps(prepared), encoding="utf-8")
+        ocr_quote = "Future work will evaluate the OCR-backed candidate."
+        ocr_path = self.dir / "ocr-pages.json"
+        ocr_path.write_text(json.dumps({"pages": {"3": "Conclusion\n\n" + ocr_quote}}), encoding="utf-8")
+        merged = future_work.merge_ocr(prepared_path, ocr_path, debug)
+        self.assertEqual(merged["ocr_required_pages"], [])
+        self.assertTrue(any(item["quote"] == ocr_quote for item in merged["candidates"]))
+
+        analysis = self.dir / "analysis-ocr.md"
+        analysis.write_text(
+            "## 局限性与批判性评价\ntext\n\n## 作者明说的未来工作（Future Work）\n"
+            "- 原文：" + ocr_quote + "\n  译：未来将评估基于 OCR 的候选。\n"
+            "  出处：Conclusion\n\n## 对自身研究的帮助评估\nhelp\n",
+            encoding="utf-8",
+        )
+        future_work.upgrade_full_sidecar(analysis, debug / "prepare.json")
+        payload = read_json(Path(str(analysis) + ".future_work.json"))
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["items"][0]["quote"], ocr_quote)
+        self.assertEqual(payload["items"][0]["page"], 3)
+        self.assertEqual(payload["source_pdf_fingerprint"], "sha256:" + self.prepared["pdf_sha256"])
+
     def test_14_prepare_allows_exact_sentence_quote(self):
         candidates = future_work.page_candidates(
             "Future work will evaluate the method on longer documents. We will share the code.", 3

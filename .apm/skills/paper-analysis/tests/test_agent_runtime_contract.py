@@ -5,6 +5,7 @@ from pathlib import Path
 SKILL_ROOT = Path(__file__).parents[1]
 REPO_ROOT = Path(__file__).parents[4]
 AGENT = REPO_ROOT / ".apm/agents/paper-analysis.agent.md"
+SKILL = SKILL_ROOT / "SKILL.md"
 PAPER_INPUT = SKILL_ROOT / "scripts/paper_input.py"
 PDF_RUNTIME = SKILL_ROOT / "scripts/pdf_runtime.py"
 FUTURE_WORK = SKILL_ROOT / "scripts/future_work.py"
@@ -18,6 +19,26 @@ class AgentRuntimeContractTests(unittest.TestCase):
         self.assertIn('uv run "$PAPER_INPUT_SCRIPT"', text)
         self.assertIn("paper_input.canonical.json", text)
         self.assertIn("只消费", text)
+
+    def test_supported_input_contract_is_zotero_free(self):
+        agent = AGENT.read_text(encoding="utf-8")
+        skill = SKILL.read_text(encoding="utf-8")
+        self.assertIn("四种之一", agent)
+        self.assertIn("四选一", agent)
+        self.assertNotIn("旧版 Zotero item key", agent)
+        self.assertNotIn("deprecated compatibility", agent)
+        self.assertNotIn("zotero-read", agent)
+        self.assertNotIn("migration window", skill)
+        self.assertNotIn("deprecated Zotero-item", skill)
+        self.assertNotIn("zotero-read", skill)
+
+    def test_normalized_zotero_provenance_is_inert(self):
+        agent = AGENT.read_text(encoding="utf-8")
+        skill = SKILL.read_text(encoding="utf-8")
+        self.assertIn("`source` 与 `item_key` 只允许停留在原输入里", agent)
+        self.assertIn("不得根据 `source`/`item_key` 回查 Zotero", agent)
+        self.assertIn("provenance only", skill)
+        self.assertIn("never uses them to open Zotero or an MCP session", skill)
 
     def test_pdf_runtime_does_not_depend_on_host_pymupdf(self):
         text = AGENT.read_text(encoding="utf-8")

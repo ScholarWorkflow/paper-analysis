@@ -9,3 +9,6 @@ dev = ["pytest>=8.3,<9"]
 
 [tool.uv.sources]
 pdf-processing-core = { git = "https://github.com/ScholarWorkflow/pdf-processing-core.git", branch = "main" }
+
+[tool.pytest.ini_options]
+testpaths = [".apm/skills/paper-analysis/tests"]

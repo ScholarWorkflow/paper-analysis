@@ -43,24 +43,39 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 
 - `mode` 只接受 `full` 或 `gap-only`；缺省 `full`。调用方传入的 `--patch-future-work` 已归一化为 `patch_analysis`，本 agent 不再接受该别名。
 - **`full` 缺 `paper`** → 用 `question` 工具要全文/摘要/路径，不硬编。
-- **normalized JSON** → 由本 agent 直接读取文件，不调用 Zotero。要求 `schema: 1`、`kind: paper-analysis-input`、`level: abstract`、非空 `abstract`，可读取 `metadata.title/authors/year/venue/doi`。`source` 与 `item_key` 仅作来源信息，不得拿它们连接 Zotero/MCP，也不得把 item key 写入分析输出。
-- **Deprecated Zotero compatibility** → 为避免 `professor-contact` 上游迁移尚未发布时回归，若 `paper` 明确是旧版 Zotero item key，可暂时使用 `zotero-read` 读取。必须把该分支视为 deprecated；新调用方不得依赖它。上游迁移完成后删除此分支。
+- **normalized JSON** → 必须先经过 `paper_input.py` 确定性校验；本 agent 不自行做 schema 猜测。`source` 与 `item_key` 只允许停留在原输入里，不能触发 Zotero/MCP，也不能进入分析输出。
+- **Deprecated Zotero compatibility** → 为避免 `professor-contact` 上游迁移尚未发布时回归，若 `paper` 明确是旧版 Zotero item key，可暂时使用 `zotero-read` 读取。该分支是 deprecated；新调用方不得依赖它。上游迁移完成后删除此分支。
 - **`full` 缺 `research_direction_file`** → 不进行个性化帮助评估，明确说明缺少该输入。
 - **`gap-only`**：必须有 `save` 或 `patch_analysis`；否则用 `question` 要一个。它绝不读取或询问 `research_direction_file`，绝不进入 Step 3 或 spawn `general` 叶子。
 
 ## 运行时路径与依赖规则
 
-1. 先解析当前 skill 的绝对目录，并得到 `FUTURE_WORK_SCRIPT=<skill_dir>/scripts/future_work.py`。后续永远使用该绝对路径，不假设当前工作目录位于仓库根目录。
-2. `future_work.py` 带 PEP 723 元数据，命令统一写成：
+1. 先解析当前 skill 的绝对目录，并得到：
+   - `FUTURE_WORK_SCRIPT=<skill_dir>/scripts/future_work.py`
+   - `PAPER_INPUT_SCRIPT=<skill_dir>/scripts/paper_input.py`
+   - `PDF_RUNTIME_SCRIPT=<skill_dir>/scripts/pdf_runtime.py`
+   后续永远使用这些绝对路径，不假设当前工作目录位于仓库根目录。
+2. 三个 helper 都以 `uv run "<absolute-script>" ...` 执行。`future_work.py` 与 `pdf_runtime.py` 用 PEP 723 自举 `pdf-processing-core`；`paper_input.py` 是无第三方依赖的 PEP 723 脚本。
+3. normalized JSON 输入先执行：
    ```bash
-   uv run "$FUTURE_WORK_SCRIPT" <subcommand> ...
+   uv run "$PAPER_INPUT_SCRIPT" "<normalized-json-absolute-path>" > "<temp-dir>/paper_input.canonical.json"
    ```
-   不再使用 `uv run --with pymupdf python3 ...`。
-3. `pdfx` 不得假设全局安装。质量检查统一通过 uv 管理的 `pdf-processing-core`：
+   命令失败即停止并报告 schema 错误。成功后，从这一刻起**只消费** `paper_input.canonical.json` 中的 `abstract` 与 `metadata`；不得再直接读原 JSON、不得根据 `source`/`item_key` 回查 Zotero。
+4. PDF 全文提取统一执行：
+   ```bash
+   uv run "$PDF_RUNTIME_SCRIPT" extract "<PDF 绝对路径>" --output "<temp-dir>/paper.fulltext.txt"
+   ```
+   后续只读取该输出文件，不用宿主 Python 直接 `import pymupdf`。
+5. OCR 坏页渲染统一执行：
+   ```bash
+   uv run "$PDF_RUNTIME_SCRIPT" render "<PDF 绝对路径>" --page <1-based-page> --output "<temp-dir>/page-<N>.png" --scale 4
+   ```
+   不用宿主 Python 直接渲染。
+6. `pdfx` 不得假设全局安装。质量检查统一通过 uv 管理的 `pdf-processing-core`：
    ```bash
    uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main" pdfx quality "<PDF 绝对路径>" --json
    ```
-4. Python 代码只消费 `pdf-processing-core` 的公共包/API（`import pdfx`）和公共 CLI（`pdfx`），不得定位该仓库的 checkout、`lib/` 或 APM 安装路径。
+7. Python 代码只消费 `pdf-processing-core` 的公共包/API（`import pdfx`）和公共 CLI（`pdfx`），不得定位该仓库的 checkout、`lib/` 或 APM 安装路径。
 
 ## 输出规范
 
@@ -99,7 +114,7 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 按 `paper` 类型路由：
 
 - **粘贴文本**：直接用。
-- **绝对 PDF 路径**：用 PyMuPDF 提取全文；提取结果统一走 Step 1.5。
+- **绝对 PDF 路径**：先命中 `<PDF>.llm_ocr.txt` 缓存则直接读取；否则用 `PDF_RUNTIME_SCRIPT extract` 生成临时全文文本，并进入 Step 1.5。
 - **绝对 `.txt`/`.md` 路径**：`read` 读取全文。可选元数据头：
   ```text
   TITLE: <标题>
@@ -110,14 +125,14 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
   ---
   <正文>
   ```
-- **绝对 normalized JSON 路径**：直接读取并验证 JSON。仅支持 `level: abstract`；把 `abstract` 作为正文，把 `metadata` 作为元数据。此输入的 evidence level 是 `abstract_only`；没有 PDF 时不得执行 PDF 质量检查或 OCR，不得假装拥有全文小节。
+- **绝对 normalized JSON 路径**：运行 `PAPER_INPUT_SCRIPT`，把 stdout 保存为 `paper_input.canonical.json`。只读取 canonical 文件中的 `abstract` 作为正文、`metadata` 作为元数据。此输入 evidence level 是 `abstract_only`；没有 PDF 时不得执行 PDF 质量检查或 OCR，不得假装拥有全文小节。
 - **Deprecated Zotero item key**：仅旧调用方兼容时通过 `zotero-read` 获取；不得把连接信息、条目标识或本地数据库信息写入输出。
 
 长全文写入临时文件后再分段读/传给子代理。
 
 ### Step 1.5 — 文本层质量分级（统一 pdfx 内核）→ OCR 兜底
 
-只对有本地 PDF 的输入执行：
+只对有本地 PDF 且未命中 OCR 缓存的输入执行：
 
 ```bash
 uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main" pdfx quality "<PDF 绝对路径>" --json
@@ -125,16 +140,15 @@ uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-
 
 四档：`trusted` 直接用；`washable` 直接用；`untrusted` 该页视觉重识别；`empty` 在整体扫描件条件下触发重识别。
 
-- 先查 `<PDF>.llm_ocr.txt` 缓存；命中则直接用完整缓存正文。
 - 任一页 `untrusted` → 触发 OCR；存在 `empty` 且 `trusted = 0` → 触发 OCR；只有 `trusted/washable` → 直接继续。
 - 无缓存且触发时先询问用户；用户同意才用 `vision-tools` 只识别坏页。
-- 自动重识别时好页保留 PyMuPDF 文本，坏页按页渲染并 OCR，失败页标 `[?]`，不得脑补。
-- 拼成完整全文后写 `<PDF>.llm_ocr.txt`，可带 `TITLE/AUTHORS/YEAR/VENUE/DOI` 元数据头。
+- 自动重识别时，好页文本来自 `PDF_RUNTIME_SCRIPT extract` 生成的逐页文本；每个坏页先用 `PDF_RUNTIME_SCRIPT render` 渲染 PNG，再交给 `vision-tools` OCR。失败页标 `[?]`，不得脑补。
+- 按页号把坏页 OCR 文本替换回 extracted fulltext，拼成完整全文后写 `<PDF>.llm_ocr.txt`，可带 `TITLE/AUTHORS/YEAR/VENUE/DOI` 元数据头。
 - 粘贴文本、文本文件、normalized abstract JSON 不运行 PDF 分级。
 
 ### Step 2 — 元数据头
 
-整理：Title / 作者 / 期刊·会议 / 年份 / DOI / 本地 PDF 文件名（有则）。normalized JSON 从 `metadata` 填；拿不到写「—」或省略，不编造。`source`/`item_key` 不进入公开元数据。
+整理：Title / 作者 / 期刊·会议 / 年份 / DOI / 本地 PDF 文件名（有则）。normalized JSON 只从 canonical `metadata` 填；拿不到写「—」或省略，不编造。`source`/`item_key` 不进入公开元数据。
 
 ### Step 3 — 并行子代理（3 个只读工作单元）
 
@@ -199,13 +213,13 @@ uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-
 8. 逐节总结只描述，不写创新/贡献/不足/局限/意义评价。
 9. 仅摘要输入不推断正文小节。
 10. future work 只引不评；无明示则明确写无。
-11. normalized JSON 中的 Zotero provenance 不能触发 Zotero/MCP 读取。
-12. 所有 Python/CLI 运行时依赖必须来自 uv 管理环境；不得依赖全局 `pdfx`、APM checkout 或仓库相对路径。
+11. normalized JSON 中的 Zotero provenance 不能触发 Zotero/MCP 读取，且生产路径只消费 `paper_input.py` 的 canonical 输出。
+12. 所有 Python/CLI 运行时依赖必须来自 uv 管理环境；不得依赖宿主 PyMuPDF、全局 `pdfx`、APM checkout 或仓库相对路径。
 
 ## Troubleshooting
 
 - 全文太长：写临时文件后传路径给只读工作单元。
 - PDF 扫描件/文字层损坏：按 Step 1.5 处理。
-- normalized JSON 不合法：报告具体 schema/字段错误，请调用方重新导出；不要尝试根据 `item_key` 自行回 Zotero 补数据。
+- normalized JSON 不合法：报告 `paper_input.py` 返回的具体 schema/字段错误，请调用方重新导出；不要尝试根据 `item_key` 自行回 Zotero 补数据。
 - 分析单元失败：明确报告原因，不用猜测替代。
 - 落盘路径：始终由当前工作目录/显式 `save` 决定，不硬编码用户路径。

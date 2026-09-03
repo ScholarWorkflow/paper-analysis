@@ -8,7 +8,8 @@
 The model-facing coordinator writes a small draft while it is already synthesizing
 its full-text analysis. This helper never reads the human Markdown for facts and
 never invokes a model. It validates the draft, fingerprints the original/canonical
-input, joins only validated future-work IDs, and atomically writes the sidecar.
+input, joins only validated future-work IDs from the same analysis/source, and
+atomically writes the sidecar.
 """
 
 from __future__ import annotations
@@ -168,10 +169,27 @@ def validate_draft(raw: Any) -> dict[str, Any]:
     }
 
 
-def validated_future_work_ids(path: Path) -> list[str]:
+def validated_future_work_ids(
+    path: Path,
+    *,
+    analysis_name: str,
+    evidence_level: str,
+    input_fingerprint: str,
+) -> list[str]:
     raw = read_json(path)
     if not isinstance(raw, dict) or raw.get("status") != "ok":
         raise ValueError("future-work sidecar must be an object with status: ok")
+    if raw.get("analysis") != analysis_name:
+        raise ValueError("future-work sidecar analysis does not match current analysis")
+    if raw.get("evidence_level") != evidence_level:
+        raise ValueError("future-work sidecar evidence_level does not match facts evidence_level")
+    source_fingerprint = raw.get("source_pdf_fingerprint")
+    if evidence_level == "fulltext":
+        if source_fingerprint != input_fingerprint:
+            raise ValueError("future-work sidecar source fingerprint does not match current input")
+    elif source_fingerprint not in {None, input_fingerprint}:
+        raise ValueError("future-work sidecar source fingerprint does not match current input")
+
     items = raw.get("items")
     if not isinstance(items, list):
         raise ValueError("future-work sidecar items must be a list")
@@ -206,13 +224,19 @@ def finalize(
     if not analysis.is_file():
         raise ValueError(f"analysis does not exist: {analysis}")
     facts = validate_draft(read_json(draft_path))
-    future_work_ids = validated_future_work_ids(future_work_path)
+    input_fingerprint = f"sha256:{sha256_file(input_path)}"
+    future_work_ids = validated_future_work_ids(
+        future_work_path,
+        analysis_name=analysis.name,
+        evidence_level=evidence_level,
+        input_fingerprint=input_fingerprint,
+    )
     payload = {
         "schema": SCHEMA,
         "kind": KIND,
         "generator_version": generator_version,
         "analysis": analysis.name,
-        "input_fingerprint": f"sha256:{sha256_file(input_path)}",
+        "input_fingerprint": input_fingerprint,
         "evidence_level": evidence_level,
         "status": "ok",
         **facts,

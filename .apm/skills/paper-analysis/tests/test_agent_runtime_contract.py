@@ -9,6 +9,7 @@ SKILL = SKILL_ROOT / "SKILL.md"
 PAPER_INPUT = SKILL_ROOT / "scripts/paper_input.py"
 PDF_RUNTIME = SKILL_ROOT / "scripts/pdf_runtime.py"
 FUTURE_WORK = SKILL_ROOT / "scripts/future_work.py"
+FACTS = SKILL_ROOT / "scripts/facts.py"
 FIXTURES = Path(__file__).parent / "fixtures"
 
 
@@ -73,8 +74,21 @@ class AgentRuntimeContractTests(unittest.TestCase):
         self.assertIn("某页连续失败：记录失败页，不重试死磕", text)
         self.assertIn("失败页内容**不脑补**", text)
 
+    def test_full_mode_facts_sidecar_is_same_pass_and_deterministic(self):
+        text = SKILL.read_text(encoding="utf-8")
+        self.assertIn("facts-draft.json", text)
+        self.assertIn("must not trigger a second model pass", text)
+        self.assertIn("do not regex/grep the final Markdown", text)
+        self.assertIn('uv run "$FACTS_SCRIPT" validate', text)
+        self.assertIn('uv run "$FACTS_SCRIPT" finalize', text)
+        self.assertIn("future_work_ids", text)
+        self.assertIn("input_fingerprint", text)
+        self.assertIn("schema", text)
+        self.assertIn("generator_version", text)
+        self.assertIn("upgrade-full-sidecar", text)
+
     def test_all_runtime_helpers_are_script_native(self):
-        for path in (PAPER_INPUT, PDF_RUNTIME, FUTURE_WORK):
+        for path in (PAPER_INPUT, PDF_RUNTIME, FUTURE_WORK, FACTS):
             text = path.read_text(encoding="utf-8")
             self.assertIn("# /// script", text, path.name)
             self.assertIn("# requires-python", text, path.name)

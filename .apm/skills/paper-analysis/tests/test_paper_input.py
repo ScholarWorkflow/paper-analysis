@@ -7,6 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 SCRIPT = ROOT / "scripts/paper_input.py"
+FIXTURES = Path(__file__).parent / "fixtures"
 SPEC = importlib.util.spec_from_file_location("paper_input", SCRIPT)
 paper_input = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -26,27 +27,12 @@ class PaperInputTests(unittest.TestCase):
         path.write_text(json.dumps(payload), encoding="utf-8")
         return path
 
-    def test_normalized_abstract_input(self):
-        path = self.write_input({
-            "schema": 1,
-            "kind": "paper-analysis-input",
-            "level": "abstract",
-            "source": "zotero",
-            "item_key": "ABC123",
-            "metadata": {
-                "title": "A Paper",
-                "authors": ["Ada Lovelace", "Alan Turing"],
-                "year": 2025,
-                "venue": "TestConf",
-                "doi": "10.1000/test",
-            },
-            "abstract": "We study a normalized input contract.",
-        })
-        result = paper_input.load_normalized_input(path)
+    def test_checked_in_normalized_abstract_fixture(self):
+        result = paper_input.load_normalized_input((FIXTURES / "normalized_abstract.json").resolve())
         self.assertEqual(result["level"], "abstract")
-        self.assertEqual(result["metadata"]["title"], "A Paper")
+        self.assertEqual(result["metadata"]["title"], "Normalized Fixture Paper")
         self.assertEqual(result["metadata"]["authors"], ["Ada Lovelace", "Alan Turing"])
-        self.assertEqual(result["abstract"], "We study a normalized input contract.")
+        self.assertIn("deterministic fixture results", result["abstract"])
         self.assertNotIn("source", result)
         self.assertNotIn("item_key", result)
 

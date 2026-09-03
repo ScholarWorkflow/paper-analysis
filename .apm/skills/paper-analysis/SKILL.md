@@ -1,6 +1,6 @@
 ---
 name: paper-analysis
-description: Analyze a research paper from user-provided text, PDF, text file, or normalized paper-input JSON, with evidence-grounded summaries, structured facts, and author-stated future work.
+description: Analyze a research paper from user-provided text, PDF, text file, or normalized paper-input JSON, with evidence-grounded summaries, structured facts for saved PDF full mode, and author-stated future work.
 ---
 
 # paper-analysis
@@ -50,9 +50,9 @@ ocr_policy: <optional gap-only OCR policy>
 
 `gap-only` requires either `save` or `patch_analysis`. It extracts only author-stated future work and validates every quotation against prepared source evidence.
 
-## Full-mode structured facts contract
+## Saved PDF full-mode structured facts contract
 
-A saved `mode: full` run must produce all three sibling artifacts from one analysis invocation:
+A saved `mode: full` run whose source is a **local PDF** must produce all three sibling artifacts from one analysis invocation:
 
 ```text
 <analysis>.md
@@ -60,7 +60,9 @@ A saved `mode: full` run must produce all three sibling artifacts from one analy
 <analysis>.md.future_work.json
 ```
 
-The facts sidecar is **not** a later Markdown extraction and must not trigger a second model pass over the paper. When spawning the registered `paper-analysis` agent for `mode: full`, include these instructions in the task prompt:
+This three-artifact contract is intentionally limited to local-PDF full mode because the existing validated full-mode future-work chain is PDF-backed. Pasted text, `.txt/.md`, and normalized abstract JSON retain their existing full-mode Markdown behavior; this issue does not promise or require a facts sidecar for those inputs.
+
+For saved local-PDF `mode: full`, include these instructions when spawning the registered `paper-analysis` agent:
 
 1. During the same three-way full-text analysis/synthesis that produces the Markdown, keep a compact `facts-draft.json` containing only facts already established in that pass. Do not re-open or re-read the paper solely for the draft, and do not regex/grep the final Markdown to reconstruct it.
 2. The draft shape is:
@@ -85,7 +87,7 @@ The facts sidecar is **not** a later Markdown extraction and must not trigger a 
    ```
 
    `source_anchors` and `confidence` are optional. Never put `future_work_ids` in the model draft; those IDs are joined deterministically from the validated future-work sidecar.
-3. Preserve the existing full-analysis Markdown quality and existing future-work evidence chain. For PDF full mode, run `future_work.py prepare` before/alongside analysis as already required, then after the Markdown exists run `future_work.py upgrade-full-sidecar` so `<analysis>.md.future_work.json` is validated against prepared candidates and contains stable IDs/page numbers.
+3. Preserve the existing full-analysis Markdown quality and future-work evidence chain. Run `future_work.py prepare` for the source PDF before/alongside analysis, then after the Markdown exists run `future_work.py upgrade-full-sidecar` so `<analysis>.md.future_work.json` is validated against prepared candidates and contains stable IDs/page numbers.
 4. Only after that future-work sidecar has `status: ok`, run:
 
    ```bash
@@ -94,13 +96,12 @@ The facts sidecar is **not** a later Markdown extraction and must not trigger a 
      --analysis "<analysis>.md" \
      --draft "<temp>/facts-draft.json" \
      --future-work "<analysis>.md.future_work.json" \
-     --input "<stable-source-file>" \
+     --input "<source.pdf>" \
      --evidence-level fulltext
    ```
 
-   For normalized abstract input use the canonical JSON as `<stable-source-file>` and `--evidence-level abstract_only`. For pasted input first write the exact supplied text to a temporary stable source file and fingerprint that file. For PDF use the source PDF itself; OCR text may be analyzed, but the fingerprint remains tied to the PDF input.
-5. Treat `facts.py` as the only writer/validator of `<analysis>.md.facts.json`. It supplies schema/version, source fingerprint, and exact `future_work_ids`; do not hand-write or patch that sidecar.
-6. Return success for a saved full run only after both sidecars exist with `status: ok`. A validation/finalization failure is an error, not a reason to silently omit a sidecar.
+5. Treat `facts.py` as the only writer/validator of `<analysis>.md.facts.json`. It supplies schema/version and the source fingerprint, verifies that the future-work sidecar belongs to the same analysis/evidence level/PDF fingerprint, and injects exact `future_work_ids`; do not hand-write or patch that sidecar.
+6. Return success for a saved local-PDF full run only after both sidecars exist with `status: ok`. A validation/finalization failure is an error, not a reason to silently omit a sidecar.
 
 This keeps `facts.json` compact enough for downstream `professor-contact` Stage 2/3 and lets callers detect staleness by `schema`, `generator_version`, and `input_fingerprint` without re-reading the PDF.
 
@@ -119,6 +120,7 @@ This keeps `facts.json` compact enough for downstream `professor-contact` Stage 
 - Never invent metadata, quotations, page numbers, citations, or structured facts.
 - Never add a second full-paper model call solely to create `facts.json`.
 - Never reconstruct structured facts by regex/grep over the human Markdown.
+- Never claim the three-artifact contract for non-PDF full-mode inputs.
 - Keep temporary and generated output outside the source tree unless the user explicitly selects an output directory.
 - Consume the installed `pdf-processing-core` package/API only; do not depend on that repository's layout or an APM checkout path.
 - Do not import PyMuPDF from the host Python in the agent; use the uv-managed PDF runtime helper.

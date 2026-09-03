@@ -10,21 +10,27 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with:
           version: latest
-      - name: Authenticate git dependency fetches
+      - name: Run deterministic unit and contract tests
         run: |
-          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
-      - name: Sync locked environment
-        run: uv sync --locked
-      - name: Run unit tests
-        run: uv run python -m unittest discover -s .apm/skills/paper-analysis/tests -p 'test_*.py'
-      - name: Run uv integration tests
-        env:
-          PAPER_ANALYSIS_RUN_UV_INTEGRATION: "1"
-        run: uv run python -m unittest .apm/skills/paper-analysis/tests/test_uv_integration.py
+          uv run --no-project --with pytest --with pymupdf pytest -q \
+            .apm/skills/paper-analysis/tests/test_paper_input.py \
+            .apm/skills/paper-analysis/tests/test_pdf_runtime.py \
+            .apm/skills/paper-analysis/tests/test_agent_runtime_contract.py
+      - name: Compile helper scripts
+        run: python -m py_compile .apm/skills/paper-analysis/scripts/*.py
+      - name: Validate project metadata
+        run: |
+          python - <<'PY'
+          import tomllib
+          from pathlib import Path
+          project = tomllib.loads(Path('pyproject.toml').read_text())
+          assert project['project']['dependencies'] == ['pdf-processing-core']
+          assert project['tool']['uv']['sources']['pdf-processing-core']['branch'] == 'main'
+          lock = Path('uv.lock').read_text()
+          assert '53c214f6e828eda3e238eeec1890208e09a43b5d' in lock
+          PY

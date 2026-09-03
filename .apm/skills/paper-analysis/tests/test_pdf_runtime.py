@@ -1,4 +1,6 @@
+import hashlib
 import importlib.util
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +49,43 @@ class PdfRuntimeTests(unittest.TestCase):
     def test_rejects_relative_pdf_path(self):
         with self.assertRaisesRegex(ValueError, "absolute"):
             pdf_runtime.extract_pdf(Path("paper.pdf"), (self.dir / "out.txt").resolve())
+
+    def test_update_ocr_cache_stamps_current_pdf_fingerprint(self):
+        pages = (self.dir / "ocr-pages.json").resolve()
+        pages.write_text(json.dumps({"pages": {"1": "exact OCR text"}}), encoding="utf-8")
+        cache = (self.dir / "paper.pdf.llm_ocr.pages.json").resolve()
+        result = pdf_runtime.update_ocr_cache(self.pdf, cache, pages)
+        payload = json.loads(cache.read_text(encoding="utf-8"))
+        expected = hashlib.sha256(self.pdf.read_bytes()).hexdigest()
+        self.assertTrue(result["ok"])
+        self.assertEqual(payload["schema"], 1)
+        self.assertEqual(payload["pdf_sha256"], expected)
+        self.assertEqual(payload["pages"], {"1": "exact OCR text"})
+
+    def test_validate_ocr_cache_rejects_stale_pdf_fingerprint(self):
+        cache = (self.dir / "paper.pdf.llm_ocr.pages.json").resolve()
+        cache.write_text(
+            json.dumps({"schema": 1, "pdf_sha256": "0" * 64, "pages": {"1": "stale OCR text"}}),
+            encoding="utf-8",
+        )
+        output = (self.dir / "validated-cache.json").resolve()
+        expected = hashlib.sha256(self.pdf.read_bytes()).hexdigest()
+        with self.assertRaisesRegex(ValueError, "cache fingerprint does not match"):
+            pdf_runtime.validate_ocr_cache(self.pdf, cache, expected, output)
+        self.assertFalse(output.exists())
+
+    def test_update_ocr_cache_does_not_merge_stale_pages(self):
+        cache = (self.dir / "paper.pdf.llm_ocr.pages.json").resolve()
+        cache.write_text(
+            json.dumps({"schema": 1, "pdf_sha256": "0" * 64, "pages": {"9": "stale OCR text"}}),
+            encoding="utf-8",
+        )
+        pages = (self.dir / "ocr-pages.json").resolve()
+        pages.write_text(json.dumps({"pages": {"1": "fresh OCR text"}}), encoding="utf-8")
+        pdf_runtime.update_ocr_cache(self.pdf, cache, pages)
+        payload = json.loads(cache.read_text(encoding="utf-8"))
+        self.assertEqual(payload["pages"], {"1": "fresh OCR text"})
+        self.assertNotIn("9", payload["pages"])
 
 
 if __name__ == "__main__":

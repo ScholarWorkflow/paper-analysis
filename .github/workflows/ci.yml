@@ -18,14 +18,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           version: latest
-      - name: Refresh lock for pytest dev dependency
-        run: uv lock
       - name: Sync locked environment
         run: uv sync --locked
       - name: Run pytest suite
         run: uv run pytest -q
-      - name: Upload generated lock
-        uses: actions/upload-artifact@v4
-        with:
-          name: generated-uv-lock
-          path: uv.lock

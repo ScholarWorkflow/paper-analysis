@@ -149,8 +149,9 @@ uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-
 | empty | 无有效文字层（含只有页码 stub 的扫描页） | 该页视觉重识别 |
 
 - **先查命中缓存**：
-  - 本地 PDF 输入：完整正文缓存为 `<文件名>.llm_ocr.txt`；页级 OCR 缓存为 `<文件名>.llm_ocr.pages.json`，格式固定为 `{"pages":{"<page>":"<exact OCR text>"}}`。
-  - 普通 full 分析命中完整正文缓存即可直接复用正文。保存的本地 PDF `full` 若后续 `future_work.py prepare` 报告 `ocr_required_pages`，还要从页级缓存取对应页；完整正文缓存不能代替页级证据。
+  - 本地 PDF 输入：完整正文缓存为 `<文件名>.llm_ocr.txt`；持久页级 OCR 缓存为 `<文件名>.llm_ocr.pages.json`，格式固定为 `{"schema":1,"pdf_sha256":"<source PDF sha256>","pages":{"<page>":"<exact OCR text>"}}`。
+  - **持久页级缓存禁止直接读取 `pages`**。只有 `pdf_runtime.py validate-ocr-cache` 校验当前 PDF、`prepare.pdf_sha256` 与 cache 的 `pdf_sha256` 一致后，生成的 validated copy 才能进入 future-work merge。fingerprint 缺失、格式旧、SHA mismatch 一律视为 cache miss，旧页文本不得复用。
+  - 普通 full 分析命中完整正文缓存即可直接复用正文。保存的本地 PDF `full` 若后续 `future_work.py prepare` 报告 `ocr_required_pages`，还要通过上述 fingerprint 校验取得页级证据；完整正文缓存不能代替页级证据。
 - **触发规则**（只看脚本 JSON，不做人工复核）：
   - 任一页 untrusted → 触发；
   - 存在 empty 页且 trusted = 0（整体是扫描件）→ 触发；
@@ -166,13 +167,28 @@ uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-
   5. 每个成功 OCR 页立刻保留精确页文本到本次 `<temp-dir>/ocr-pages.json` 的 `pages` 映射；**不得对已经识别成功的页再次 OCR**；
   6. 按页序拼接完整全文 = 好页 helper 提取文本 + 坏页识别文本。
 - **缓存写回**（写回后即成为下次命中；完整正文与页级证据分开保存）：
-  - 本地 PDF 输入：完整正文写 `<文件名>.llm_ocr.txt`；本次所有成功 OCR 页合并写 `<文件名>.llm_ocr.pages.json`，键为 1-based 页码，值为 exact OCR text；
+  - 本地 PDF 输入：完整正文写 `<文件名>.llm_ocr.txt`；本次成功 OCR 页不得手工 merge 到持久 cache，必须执行：
+    ```bash
+    uv run "$PDF_RUNTIME_SCRIPT" update-ocr-cache \
+      --pdf "<source.pdf>" \
+      --cache "<source.pdf>.llm_ocr.pages.json" \
+      --pages "<temp-dir>/ocr-pages.json"
+    ```
+    helper 会以当前 PDF SHA256 写 `schema: 1` cache；同 fingerprint 才合并旧页，旧 fingerprint/malformed cache 不得带入新 cache。
   - 产物正文带头部元数据块（`TITLE:`/`AUTHORS:`/`YEAR:`/`VENUE:`/`DOI:`，填得到的才填）→ Step 2 直接解析。
 - 识别产物即 Step 3 的全文输入文件（天然是干净的完整正文）。
 - **保存的本地 PDF `full` 的 future-work 候选复用**：Step 1.5 完成后运行 `future_work.py prepare`。若 `<debug>/prepare.json` 的 `ocr_required_pages` 非空：
-  1. 从本次 `<temp-dir>/ocr-pages.json` 与持久 `<文件名>.llm_ocr.pages.json` 中挑出这些 required pages，写成 `<temp-dir>/future-work-ocr.json`；
-  2. 已有 exact OCR text 的 required page 直接复用，**不得再次调用 vision-tools**；
-  3. 只有缺失的 required page 才走上面的 render + `vision-tools` OCR。若本次已经获得用户的自动 OCR 授权，沿用同一次授权；否则按原规则只为缺失页询问一次；
+  1. 若持久 `<文件名>.llm_ocr.pages.json` 存在，先执行：
+     ```bash
+     uv run "$PDF_RUNTIME_SCRIPT" validate-ocr-cache \
+       --pdf "<source.pdf>" \
+       --cache "<source.pdf>.llm_ocr.pages.json" \
+       --expected-sha256 "<prepare.pdf_sha256>" \
+       --output "<temp-dir>/validated-ocr-cache.json"
+     ```
+     只有命令成功后才能读取 `validated-ocr-cache.json.pages`。命令因 fingerprint/schema mismatch 失败时，**该持久 cache 整体作废，不得读取其中任何页文本**；继续使用本次 `<temp-dir>/ocr-pages.json`，缺页再 OCR。
+  2. 从本次 `<temp-dir>/ocr-pages.json` 与通过校验的 `<temp-dir>/validated-ocr-cache.json` 中挑出 required pages，写成 `<temp-dir>/future-work-ocr.json`；未经校验的持久 cache 永远不能参与。
+  3. 已有 exact OCR text 的 required page 直接复用，**不得再次调用 vision-tools**；只有缺失的 required page 才走上面的 render + `vision-tools` OCR。若本次已经获得用户的自动 OCR 授权，沿用同一次授权；否则按原规则只为缺失页询问一次。新识别页完成后再次用 `update-ocr-cache` 写回带当前 PDF fingerprint 的持久 cache。
   4. required pages 全部齐全后执行：
      ```bash
      uv run "$FUTURE_WORK_SCRIPT" merge-ocr \
@@ -303,12 +319,14 @@ Title / 作者 / 期刊·会议 / 年份 / DOI / 本地 PDF 路径(有则)
 11. **未来工作只引不评**：`作者明说的未来工作` 节只做逐字摘录 + 翻译 + 标出处，禁止评价可行性、禁止补充读者推断；与 `局限性与批判性评价` 互斥——局限 = 读者批判（该节继续拒绝"限于篇幅/未来工作"套话），future work = 作者自述待做。原文必须逐字可回溯，OCR 输入同样适用；无明示写「—（论文未明示 future work）」，不脑补。
 12. **PDF facts 同源**：保存的本地 PDF full 只允许把与当前 analysis 名称、`fulltext` evidence level、当前 PDF SHA256 都匹配的 future-work sidecar ID join 进 facts；任何不匹配都 fail closed。
 13. **保存顺序**：保存的本地 PDF full 必须先写最终 Markdown，再 upgrade future-work，再 finalize facts；`upgrade-full-sidecar` 绝不能对不存在的 analysis 路径执行。
-14. **OCR 单次复用**：future-work validation 需要的坏页若已经由本次 full OCR 或页级缓存识别，必须复用 exact page text；不得为了 sidecar 再 OCR 同一页。
+14. **OCR 单次复用**：future-work validation 需要的坏页若已经由本次 full OCR 或**通过当前 PDF fingerprint 校验的**页级缓存识别，必须复用 exact page text；不得为了 sidecar 再 OCR 同一页。
+15. **OCR cache 同源**：持久 `<pdf>.llm_ocr.pages.json` 必须含 `schema: 1` 与当前源 PDF 的 `pdf_sha256`；复用前必须由 `validate-ocr-cache` 对照当前 PDF 和 `prepare.pdf_sha256` 校验。缺 fingerprint、旧 schema、SHA mismatch 都是 cache miss，绝不把缓存页送进 `merge-ocr`。
 
 ## Troubleshooting
 
 - **全文太长**：写入临时文件，spawn 子代理时传文件路径而非全文正文。
-- **PDF 扫描件/文字层损坏**：走 Step 1.5——pdfx quality 分级出 untrusted/empty 页 → 先查缓存 → 询问用户后自动 vision-tools 只重识别坏页、拼回完整全文并挂缓存；页级 OCR 同时保留给 future-work candidate merge；用户如已手头有干净文本则直接用。
+- **PDF 扫描件/文字层损坏**：走 Step 1.5——pdfx quality 分级出 untrusted/empty 页 → 先查缓存 → 询问用户后自动 vision-tools 只重识别坏页、拼回完整全文并挂缓存；页级 OCR 同时保留给 future-work candidate merge；持久页级 cache 必须先过 PDF fingerprint 校验；用户如已手头有干净文本则直接用。
+- **OCR 页 cache fingerprint mismatch**：把持久 cache 当作不存在，绝不读取其 `pages`；优先复用本次 run 的临时页文本，缺页才按授权规则 OCR，并用 `update-ocr-cache` 以当前 PDF SHA 重建 cache。
 - **分析单元失败**：明确报告失败原因，不用猜测内容替代。
 - **facts/future-work sidecar mismatch**：视为当前 PDF full run 失败；不要从其他论文复制 sidecar，不要改 ID，不要手写 JSON 绕过。
 - **落盘路径**：始终由 `pwd` 决定工作目录，不要把用户的 vault 绝对路径写死。

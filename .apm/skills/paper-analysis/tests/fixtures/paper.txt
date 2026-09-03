@@ -1,0 +1,7 @@
+TITLE: Text Fixture Paper
+AUTHORS: Ada Lovelace, Alan Turing
+YEAR: 2025
+VENUE: FixtureConf
+DOI: 10.1000/text-fixture
+---
+This is a deterministic text input fixture for paper-analysis.

@@ -74,18 +74,23 @@ class AgentRuntimeContractTests(unittest.TestCase):
         self.assertIn("某页连续失败：记录失败页，不重试死磕", text)
         self.assertIn("失败页内容**不脑补**", text)
 
-    def test_full_mode_facts_sidecar_is_same_pass_and_deterministic(self):
-        text = SKILL.read_text(encoding="utf-8")
-        self.assertIn("facts-draft.json", text)
-        self.assertIn("must not trigger a second model pass", text)
-        self.assertIn("do not regex/grep the final Markdown", text)
-        self.assertIn('uv run "$FACTS_SCRIPT" validate', text)
-        self.assertIn('uv run "$FACTS_SCRIPT" finalize', text)
-        self.assertIn("future_work_ids", text)
-        self.assertIn("input_fingerprint", text)
-        self.assertIn("schema", text)
-        self.assertIn("generator_version", text)
-        self.assertIn("upgrade-full-sidecar", text)
+    def test_full_mode_facts_sidecar_is_pdf_only_same_pass_and_deterministic(self):
+        agent = AGENT.read_text(encoding="utf-8")
+        skill = SKILL.read_text(encoding="utf-8")
+        self.assertIn("FACTS_SCRIPT=<skill_dir>/scripts/facts.py", agent)
+        self.assertIn('uv run "$FACTS_SCRIPT" validate', agent)
+        self.assertIn('uv run "$FACTS_SCRIPT" finalize', agent)
+        self.assertIn("facts-draft.json", agent)
+        self.assertIn("不得触发第二次全文模型调用", agent)
+        self.assertIn("不得在最终 Markdown 落盘后用 regex/grep 反向提取 facts", agent)
+        self.assertIn("保存的本地 PDF `full`", agent)
+        self.assertIn("非 PDF full 输入保持原有 Markdown 保存行为", agent)
+        self.assertIn("same analysis/evidence level/PDF fingerprint", skill)
+        self.assertIn("three-artifact contract is intentionally limited to local-PDF full mode", skill)
+        self.assertIn("future_work_ids", skill)
+        self.assertIn("input_fingerprint", skill)
+        self.assertIn("generator_version", skill)
+        self.assertIn("upgrade-full-sidecar", skill)
 
     def test_all_runtime_helpers_are_script_native(self):
         for path in (PAPER_INPUT, PDF_RUNTIME, FUTURE_WORK, FACTS):

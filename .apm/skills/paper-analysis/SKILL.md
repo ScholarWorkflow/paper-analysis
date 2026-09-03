@@ -12,7 +12,7 @@ This skill starts the registered `paper-analysis` agent. It accepts one of:
 - An absolute local `.txt` or `.md` path
 - An absolute normalized JSON paper-input path
 
-It does not search for papers, download papers, or own Zotero integration. Zotero-aware callers should normalize any fallback metadata/abstract upstream and pass only the resulting JSON file path. During the cross-repository migration window, the agent retains a deprecated Zotero-item compatibility branch so existing `professor-contact` releases do not break; new callers must not depend on it.
+It does not search for papers, download papers, or own Zotero integration. Zotero-aware callers must normalize any fallback metadata/abstract upstream and pass only the resulting JSON file path.
 
 Normalized abstract-level JSON uses this contract:
 

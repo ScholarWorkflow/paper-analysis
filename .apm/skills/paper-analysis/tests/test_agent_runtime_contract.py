@@ -114,6 +114,16 @@ class AgentRuntimeContractTests(unittest.TestCase):
         self.assertLess(text.index(merge_marker), text.index(upgrade_marker))
         self.assertIn("ocr_required_pages` 为空", text)
 
+    def test_persistent_page_ocr_cache_is_fingerprint_bound_before_reuse(self):
+        text = AGENT.read_text(encoding="utf-8")
+        validate_marker = 'uv run "$PDF_RUNTIME_SCRIPT" validate-ocr-cache'
+        merge_marker = 'uv run "$FUTURE_WORK_SCRIPT" merge-ocr'
+        self.assertIn("pdf_sha256", text)
+        self.assertIn("validated-ocr-cache.json", text)
+        self.assertIn("该持久 cache 整体作废，不得读取其中任何页文本", text)
+        self.assertIn('uv run "$PDF_RUNTIME_SCRIPT" update-ocr-cache', text)
+        self.assertLess(text.index(validate_marker), text.index(merge_marker))
+
     def test_all_runtime_helpers_are_script_native(self):
         for path in (PAPER_INPUT, PDF_RUNTIME, FUTURE_WORK, FACTS):
             text = path.read_text(encoding="utf-8")

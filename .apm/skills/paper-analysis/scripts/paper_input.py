@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = []
+# ///
 """Validate and read normalized paper-analysis JSON inputs."""
 
 from __future__ import annotations

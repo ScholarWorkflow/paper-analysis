@@ -115,7 +115,7 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 按 `paper` 类型路由：
 
 - **粘贴文本**：直接用。
-- **本地 PDF 绝对路径**：先查 Step 1.5 的 OCR 缓存；未命中时用 `uv run "$PDF_RUNTIME_SCRIPT" extract ...` 提取全文。提取结果统一走 Step 1.5 的 pdfx 质量分级（脚判定级，不主观判断），有坏页则走 OCR 兜底。若同时是 `mode: full` + `save`，在进入 Step 3 前另外运行一次确定性的 `future_work.py prepare`，把 `prepare.json` / `candidates.json` 保存在本次分析临时目录；这不是模型全文 pass，只为后续验证现有 future-work 句子。
+- **本地 PDF 绝对路径**：先查 Step 1.5 的 OCR 缓存；未命中时用 `uv run "$PDF_RUNTIME_SCRIPT" extract ...` 提取全文。提取结果统一走 Step 1.5 的 pdfx 质量分级（脚判定级，不主观判断），有坏页则走 OCR 兜底。若同时是 `mode: full` + `save`，在 Step 1.5 完成、已有本次页级 OCR 结果可复用之后、进入 Step 3 前运行一次确定性的 `future_work.py prepare`，把 `prepare.json` / `candidates.json` 保存在本次分析临时目录；这不是模型全文 pass，只为后续验证现有 future-work 句子。
 - **本地文本文件绝对路径（.txt/.md）**：`read` 读取全文。**可选元数据头**（`---` 分隔，OCR/预处理产物建议带）：
   ```
   TITLE: <标题>
@@ -148,8 +148,9 @@ uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-
 | untrusted | 文字层乱码 | 该页视觉重识别 |
 | empty | 无有效文字层（含只有页码 stub 的扫描页） | 该页视觉重识别 |
 
-- **先查命中缓存**（识别产物已存在则直接复用它作正文，跳过一切分级与识别）：
-  - 本地 PDF 输入：PDF 同目录存在 `<文件名>.llm_ocr.txt`。
+- **先查命中缓存**：
+  - 本地 PDF 输入：完整正文缓存为 `<文件名>.llm_ocr.txt`；页级 OCR 缓存为 `<文件名>.llm_ocr.pages.json`，格式固定为 `{"pages":{"<page>":"<exact OCR text>"}}`。
+  - 普通 full 分析命中完整正文缓存即可直接复用正文。保存的本地 PDF `full` 若后续 `future_work.py prepare` 报告 `ocr_required_pages`，还要从页级缓存取对应页；完整正文缓存不能代替页级证据。
 - **触发规则**（只看脚本 JSON，不做人工复核）：
   - 任一页 untrusted → 触发；
   - 存在 empty 页且 trusted = 0（整体是扫描件）→ 触发；
@@ -162,11 +163,24 @@ uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-
   2. 调用 `vision-tools` 的 `glance <页图> --ocr`（免费模型 429 → 自动切付费兜底，见 vision-tools skill）；
   3. 页内图让模型给出 `[图 p.XX-N: 类型+结构]` 描述（无图省略）；
   4. 某页连续失败：记录失败页，不重试死磕；失败页内容**不脑补**，缺失处标 `[?]`；
-  5. 按页序拼接完整全文 = 好页 helper 提取文本 + 坏页识别文本。
-- **缓存写回**（写回后即成为下次命中；产物始终是完整全文）：
-  - 本地 PDF 输入：PDF 同目录写 `<文件名>.llm_ocr.txt`；
-  - 产物文件带头部元数据块（`TITLE:`/`AUTHORS:`/`YEAR:`/`VENUE:`/`DOI:`，填得到的才填）→ Step 2 直接解析。
+  5. 每个成功 OCR 页立刻保留精确页文本到本次 `<temp-dir>/ocr-pages.json` 的 `pages` 映射；**不得对已经识别成功的页再次 OCR**；
+  6. 按页序拼接完整全文 = 好页 helper 提取文本 + 坏页识别文本。
+- **缓存写回**（写回后即成为下次命中；完整正文与页级证据分开保存）：
+  - 本地 PDF 输入：完整正文写 `<文件名>.llm_ocr.txt`；本次所有成功 OCR 页合并写 `<文件名>.llm_ocr.pages.json`，键为 1-based 页码，值为 exact OCR text；
+  - 产物正文带头部元数据块（`TITLE:`/`AUTHORS:`/`YEAR:`/`VENUE:`/`DOI:`，填得到的才填）→ Step 2 直接解析。
 - 识别产物即 Step 3 的全文输入文件（天然是干净的完整正文）。
+- **保存的本地 PDF `full` 的 future-work 候选复用**：Step 1.5 完成后运行 `future_work.py prepare`。若 `<debug>/prepare.json` 的 `ocr_required_pages` 非空：
+  1. 从本次 `<temp-dir>/ocr-pages.json` 与持久 `<文件名>.llm_ocr.pages.json` 中挑出这些 required pages，写成 `<temp-dir>/future-work-ocr.json`；
+  2. 已有 exact OCR text 的 required page 直接复用，**不得再次调用 vision-tools**；
+  3. 只有缺失的 required page 才走上面的 render + `vision-tools` OCR。若本次已经获得用户的自动 OCR 授权，沿用同一次授权；否则按原规则只为缺失页询问一次；
+  4. required pages 全部齐全后执行：
+     ```bash
+     uv run "$FUTURE_WORK_SCRIPT" merge-ocr \
+       --prepared "<debug>/prepare.json" \
+       --ocr "<temp-dir>/future-work-ocr.json" \
+       --debug-dir "<debug>"
+     ```
+  5. merge 后重新读取 `<debug>/prepare.json`，必须确认 `ocr_required_pages` 为空；否则保存的 PDF full run 直接失败，不进入 Step 3。后续 `upgrade-full-sidecar` 只使用这个已 merge 的 prepared/candidates 状态。
 
 ### Step 2 — 元数据头
 
@@ -209,34 +223,32 @@ Title / 作者 / 期刊·会议 / 年份 / DOI / 本地 PDF 路径(有则)
 
 ### Step 4 — 组装
 
-照「输出模板」拼装，保证标题层级一致、语言为中文、信息密度高、无口语化冗余。
+照「输出模板」拼装，保证标题层级一致、语言为中文、信息密度高、无口语化冗余。保存的本地 PDF `full` 在本步骤只完成 Markdown 字符串与 `facts-draft.json` 的组装/校验，**不得在 analysis 文件尚未写入时调用 `upgrade-full-sidecar`**。
 
-保存的本地 PDF `full` 模式在 Markdown 组装完成后，必须使用 Step 1 已准备的 PDF candidates 执行：
-
-```bash
-uv run "$FUTURE_WORK_SCRIPT" upgrade-full-sidecar \
-  --analysis "<analysis.md>" \
-  --prepared "<debug>/prepare.json"
-```
-
-这一步把本次 Markdown 中作者明说的 future work 与 PDF 候选逐字对齐，并生成 `<analysis>.future_work.json`。失败就停止；不得绕过、不得手写 sidecar。随后才执行：
-
-```bash
-uv run "$FACTS_SCRIPT" finalize \
-  --analysis "<analysis.md>" \
-  --draft "<facts-draft.json>" \
-  --future-work "<analysis>.future_work.json" \
-  --input "<source.pdf>" \
-  --evidence-level fulltext
-```
-
-`facts.py` 必须验证 future-work sidecar 的 `analysis`、`evidence_level` 和 `source_pdf_fingerprint` 与当前 analysis/PDF 一致，然后才允许注入 `future_work_ids`。任一 mismatch 都按错误处理，防止多论文并行时串 sidecar。
-
-### Step 5 — 输出
+### Step 5 — 输出与保存后确定性 finalize
 
 - **默认**：Markdown 直接作为返回值返回给调用方（由调用方展示给用户）。
-- **`save`**：落盘到 `<dir>/论文分析/<第一作者>/<标题>.md`（dir 缺省 = 当前工作目录，由 `pwd` 确定，不硬编码）。作者/标题做路径净化（去 `/`、`\`、`:`、空白等危险字符；作者缺失用 `unknown`；标题取前 ~20 字）。目录不存在则创建。落盘后把路径附在返回值里。
-- **保存的本地 PDF `full`**：只有 `<analysis>.md`、`<analysis>.md.future_work.json`、`<analysis>.md.facts.json` 三者都存在，且两个 sidecar 都 `status: ok`，才可以报告成功。非 PDF full 输入保持原有 Markdown 保存行为，不声称三件套。
+- **`save` 通用顺序**：先确定 `<dir>/论文分析/<第一作者>/<标题>.md`（dir 缺省 = 当前工作目录，由 `pwd` 确定，不硬编码），作者/标题做路径净化（去 `/`、`\`、`:`、空白等危险字符；作者缺失用 `unknown`；标题取前 ~20 字），创建目录，然后**先把 Step 4 已组装完成的 Markdown 写到最终 analysis 路径，并确认 `analysis.is_file()` 等价条件成立**。只有这一步成功，才允许进入任何 sidecar finalize。
+- **保存的本地 PDF `full`**：Markdown 写盘后按以下顺序执行，顺序不可交换：
+  1. 使用 Step 1.5 已完成 OCR merge 的 `<debug>/prepare.json` 执行：
+     ```bash
+     uv run "$FUTURE_WORK_SCRIPT" upgrade-full-sidecar \
+       --analysis "<analysis.md>" \
+       --prepared "<debug>/prepare.json"
+     ```
+     这一步把已经落盘的 Markdown 中作者明说的 future work 与 PDF/已复用 OCR 候选逐字对齐，并生成 `<analysis>.future_work.json`。失败就停止；不得绕过、不得手写 sidecar。
+  2. 确认 `<analysis>.future_work.json` 存在且 `status: ok` 后执行：
+     ```bash
+     uv run "$FACTS_SCRIPT" finalize \
+       --analysis "<analysis.md>" \
+       --draft "<facts-draft.json>" \
+       --future-work "<analysis>.future_work.json" \
+       --input "<source.pdf>" \
+       --evidence-level fulltext
+     ```
+     `facts.py` 必须验证 future-work sidecar 的 `analysis`、`evidence_level` 和 `source_pdf_fingerprint` 与当前 analysis/PDF 一致，然后才允许注入 `future_work_ids`。任一 mismatch 都按错误处理，防止多论文并行时串 sidecar。
+  3. 只有 `<analysis>.md`、`<analysis>.md.future_work.json`、`<analysis>.md.facts.json` 三者都存在，且两个 sidecar 都 `status: ok`，才可以报告成功。
+- **非 PDF full 输入**：保持原有 Markdown 保存行为，不声称三件套。
 - 结尾附追问钩子：一句「如需深挖（方法细节/与某篇对比/局限对某方向的影响），可以继续问」，但不建多轮状态机。
 
 ## 返回约定
@@ -290,11 +302,13 @@ uv run "$FACTS_SCRIPT" finalize \
 10. **输出文风与自查**：全文遵守「输出规范」一节的文风规定（逐节总结豁免：只复述、不解释术语，其余章节全量遵守）；3 个 general 子代理的指令里同样逐条写入。**返回前自查**：按禁词表（赋能/抓手/颗粒度/闭环……）逐词检查自己的成品，命中即改写后再返回。
 11. **未来工作只引不评**：`作者明说的未来工作` 节只做逐字摘录 + 翻译 + 标出处，禁止评价可行性、禁止补充读者推断；与 `局限性与批判性评价` 互斥——局限 = 读者批判（该节继续拒绝"限于篇幅/未来工作"套话），future work = 作者自述待做。原文必须逐字可回溯，OCR 输入同样适用；无明示写「—（论文未明示 future work）」，不脑补。
 12. **PDF facts 同源**：保存的本地 PDF full 只允许把与当前 analysis 名称、`fulltext` evidence level、当前 PDF SHA256 都匹配的 future-work sidecar ID join 进 facts；任何不匹配都 fail closed。
+13. **保存顺序**：保存的本地 PDF full 必须先写最终 Markdown，再 upgrade future-work，再 finalize facts；`upgrade-full-sidecar` 绝不能对不存在的 analysis 路径执行。
+14. **OCR 单次复用**：future-work validation 需要的坏页若已经由本次 full OCR 或页级缓存识别，必须复用 exact page text；不得为了 sidecar 再 OCR 同一页。
 
 ## Troubleshooting
 
 - **全文太长**：写入临时文件，spawn 子代理时传文件路径而非全文正文。
-- **PDF 扫描件/文字层损坏**：走 Step 1.5——pdfx quality 分级出 untrusted/empty 页 → 先查缓存 → 询问用户后自动 vision-tools 只重识别坏页、拼回完整全文并挂缓存；用户如已手头有干净文本则直接用。
+- **PDF 扫描件/文字层损坏**：走 Step 1.5——pdfx quality 分级出 untrusted/empty 页 → 先查缓存 → 询问用户后自动 vision-tools 只重识别坏页、拼回完整全文并挂缓存；页级 OCR 同时保留给 future-work candidate merge；用户如已手头有干净文本则直接用。
 - **分析单元失败**：明确报告失败原因，不用猜测内容替代。
 - **facts/future-work sidecar mismatch**：视为当前 PDF full run 失败；不要从其他论文复制 sidecar，不要改 ID，不要手写 JSON 绕过。
 - **落盘路径**：始终由 `pwd` 决定工作目录，不要把用户的 vault 绝对路径写死。

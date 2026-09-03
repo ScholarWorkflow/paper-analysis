@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "kind": "paper-analysis-input",
+  "level": "abstract",
+  "source": "zotero",
+  "item_key": "TEST1234",
+  "metadata": {
+    "title": "Normalized Fixture Paper",
+    "authors": ["Ada Lovelace", "Alan Turing"],
+    "year": 2025,
+    "venue": "FixtureConf",
+    "doi": "10.1000/fixture"
+  },
+  "abstract": "We study a normalized paper input contract and report deterministic fixture results."
+}

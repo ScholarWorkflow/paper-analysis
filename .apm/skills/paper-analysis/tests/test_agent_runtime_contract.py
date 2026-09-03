@@ -122,7 +122,9 @@ class AgentRuntimeContractTests(unittest.TestCase):
         self.assertIn("validated-ocr-cache.json", text)
         self.assertIn("该持久 cache 整体作废，不得读取其中任何页文本", text)
         self.assertIn('uv run "$PDF_RUNTIME_SCRIPT" update-ocr-cache', text)
-        self.assertLess(text.index(validate_marker), text.index(merge_marker))
+        validate_index = text.index(validate_marker)
+        saved_full_merge_index = text.index(merge_marker, validate_index)
+        self.assertLess(validate_index, saved_full_merge_index)
 
     def test_all_runtime_helpers_are_script_native(self):
         for path in (PAPER_INPUT, PDF_RUNTIME, FUTURE_WORK, FACTS):

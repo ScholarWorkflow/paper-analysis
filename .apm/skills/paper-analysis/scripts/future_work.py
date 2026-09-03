@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+# /// script
+# requires-python = ">=3.11"
+# dependencies = [
+#   "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main",
+# ]
+# ///
 """Deterministic future-work evidence helper for paper-analysis.
 
 This program intentionally only extracts, validates, and patches evidence.  It

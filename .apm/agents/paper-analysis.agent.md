@@ -34,7 +34,7 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 
 | 参数 | 说明 | 必填 |
 |---|---|---|
-| `paper` | 四种之一：①粘贴文本/摘要 ②本地 PDF 路径 ③本地文本文件路径（.txt/.md）④通过 Zotero 连接读取的条目 | 是（四选一） |
+| `paper` | 五种之一：①粘贴文本/摘要 ②本地 PDF 绝对路径 ③本地文本文件绝对路径（.txt/.md）④normalized paper-input JSON 绝对路径 ⑤旧版 Zotero item key（deprecated compatibility） | 是（五选一） |
 | `research_direction_file` | 任意格式文本文件的绝对路径，描述用户研究方向；用于「对自身研究的帮助评估」 | 否 |
 | `save` | 落盘开关；值为目录绝对路径或空。空且需要落盘时提示用户 | 否 |
 | `mode` | `full`（缺省）或 `gap-only` | 否 |
@@ -43,9 +43,39 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 
 - `mode` 只接受 `full` 或 `gap-only`；缺省 `full`。调用方传入的 `--patch-future-work` 已归一化为 `patch_analysis`，本 agent 不再接受该别名。
 - **`full` 缺 `paper`** → 先停下来用 `question` 工具要全文/摘要/关键信息，不硬编。
-- **Zotero 条目** → 使用 `zotero-read` 能力读取条目元数据和全文；连接不可用时提示用户提供 PDF 或文本文件。不得把本地数据库、服务地址或账户状态写入输出。
+- **normalized JSON** → 必须先经过 `paper_input.py` 确定性校验；本 agent 不自行做 schema 猜测。`source` 与 `item_key` 只允许停留在原输入里，不能触发 Zotero/MCP，也不能进入分析输出。
+- **旧版 Zotero item key（deprecated compatibility）** → 在对应 `professor-contact` caller 迁移合并/发布前，继续使用 `zotero-read` 能力读取条目元数据和全文；连接不可用时提示用户提供 PDF、文本文件或 normalized JSON。该兼容分支是 deprecated，新调用方不得依赖；不得把本地数据库、服务地址、账户状态或条目标识写入公开输出。
  - **`full` 缺 `research_direction_file`** → 不进行个性化帮助评估，改为明确说明缺少该输入。
 - **`gap-only`**：必须有 `save` 或 `patch_analysis`；否则用 `question` 要一个。它绝不读取或询问 `research_direction_file`，绝不进入 Step 3 或 spawn `general` 叶子。`patch_analysis` 存在时它是唯一 Markdown patch 目标；只有 `save` 时，先按 Step 1/2 取得论文与保存路径，再以新落盘分析作为 patch 目标。
+
+## 运行时路径与依赖规则
+
+1. 先解析当前 skill 的绝对目录，并得到：
+   - `FUTURE_WORK_SCRIPT=<skill_dir>/scripts/future_work.py`
+   - `PAPER_INPUT_SCRIPT=<skill_dir>/scripts/paper_input.py`
+   - `PDF_RUNTIME_SCRIPT=<skill_dir>/scripts/pdf_runtime.py`
+   后续永远使用这些绝对路径，不假设当前工作目录位于仓库根目录。
+2. 三个 helper 都以 `uv run "<absolute-script>" ...` 执行。`future_work.py` 与 `pdf_runtime.py` 用 PEP 723 自举 `pdf-processing-core`；`paper_input.py` 是无第三方依赖的 PEP 723 脚本。
+3. normalized JSON 输入先执行：
+   ```bash
+   uv run "$PAPER_INPUT_SCRIPT" "<normalized-json-absolute-path>" > "<temp-dir>/paper_input.canonical.json"
+   ```
+   命令失败即停止并报告 schema 错误。成功后，从这一刻起**只消费** `paper_input.canonical.json` 中的 `abstract` 与 `metadata`；不得再直接读原 JSON、不得根据 `source`/`item_key` 回查 Zotero。
+4. PDF 全文提取统一执行：
+   ```bash
+   uv run "$PDF_RUNTIME_SCRIPT" extract "<PDF 绝对路径>" --output "<temp-dir>/paper.fulltext.txt"
+   ```
+   后续只读取该输出文件，不用宿主 Python 直接 `import pymupdf` / `import fitz`。
+5. OCR 坏页渲染统一执行：
+   ```bash
+   uv run "$PDF_RUNTIME_SCRIPT" render "<PDF 绝对路径>" --page <1-based-page> --output "<temp-dir>/page-<N>.png" --scale 4
+   ```
+   不用宿主 Python 直接渲染。
+6. `pdfx` 不得假设全局安装。质量检查统一通过 uv 管理的 `pdf-processing-core`：
+   ```bash
+   uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main" pdfx quality "<PDF 绝对路径>" --json
+   ```
+7. Python 代码只消费 `pdf-processing-core` 的公共包/API（`import pdfx`）和公共 CLI（`pdfx`），不得定位该仓库的 checkout、`lib/` 或 APM 安装路径。
 
 ## 输出规范
 
@@ -69,12 +99,12 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 1. 确定 `analysis`：优先 `patch_analysis`；否则要求可定位的 `paper` 和 `save`，按正常保存命名规则得到新分析路径，并只写最小模板（元数据头、`## 局限性与批判性评价`、`## 对自身研究的帮助评估`）作为 patch 容器。既有文件必须已有这两个精确锚点；没有锚点时停止并报告，绝不正则改写其它位置。
 2. 确定可读 PDF。`patch_analysis` 无 `paper` 时，从分析元数据的「本地 PDF」或已有 OCR/来源记录定位；仍没有时用 `question` 要 PDF。对 PDF 运行：
    ```bash
-   uv run --with pymupdf python3 .apm/skills/paper-analysis/scripts/future_work.py prepare "<pdf>" --debug-dir "<analysis_dir>/_future_work_debug/<stable-name>"
+   uv run "$FUTURE_WORK_SCRIPT" prepare "<pdf>" --debug-dir "<analysis_dir>/_future_work_debug/<stable-name>"
    ```
    只消费该 debug 目录的 `prepare.json` 与 `candidates.json`。
-3. `prepare.ocr_required_pages` 非空时：调用方明确传 `ocr_policy: auto_candidate_pages` 才用 `vision-tools` 仅 OCR 这些页；其他直接调用一律先用 `question` 说明页码和逐页耗时，用户同意才 OCR。将逐页 OCR 原文写成 `{"pages":{"<page>":"<text>"}}`，运行 `future_work.py merge-ocr --prepared "<debug>/prepare.json" --ocr "<ocr.json>" --debug-dir "<debug>"` 后才消费更新后的 candidates。OCR 不得扩大到非候选页，也不得把模型改写的句子当候选原文。
-4. 只把 `candidates.json` 给模型选择和翻译。模型写临时 `items.json`，严格只允许 `items[]` 中的 `id`、`quote`、`translation_zh`、`source`、`page`；每条 quote 必须是候选中的一至两句、逐字不改且不超过 1200 字符。**只收作者明确承诺的未来行动**，如含 `future work`、`we will/plan/need to`、`今後` 的待做表达；只是在解释现有结果的 `could`、条件假设 `when ...`、方法评价 `will be effective`、读者推断、局限、相关工作一律不收。找不到则写空数组。先运行 `validate --items ... --candidates ...`，失败即修正临时 JSON，绝不手工绕过。
-5. 验证成功后运行 `finalize --analysis ... --items ... --candidates ... --patch --pdf-sha256 "<prepare.pdf_sha256>"`。它先 patch Markdown 的专用节，成功后再原子写 `<analysis>.future_work.json`。**返回前必须确认 sidecar 存在且 `status: ok`、items 与 items.json 一致，并确认 Markdown 中 future-work 标题位于 `## 局限性与批判性评价` 与 `## 对自身研究的帮助评估` 之间。任一检查失败即返回 error，不得手写 Markdown、不得只报告抽取结果、不得把没有 sidecar 的状态说成完成。** 返回 sidecar、patch 路径和条目数。
+3. `prepare.ocr_required_pages` 非空时：调用方明确传 `ocr_policy: auto_candidate_pages` 才用 `vision-tools` 仅 OCR 这些页；其他直接调用一律先用 `question` 说明页码和逐页耗时，用户同意才 OCR。将逐页 OCR 原文写成 `{"pages":{"<page>":"<text>"}}`，运行 `uv run "$FUTURE_WORK_SCRIPT" merge-ocr --prepared "<debug>/prepare.json" --ocr "<ocr.json>" --debug-dir "<debug>"` 后才消费更新后的 candidates。OCR 不得扩大到非候选页，也不得把模型改写的句子当候选原文。
+4. 只把 `candidates.json` 给模型选择和翻译。模型写临时 `items.json`，严格只允许 `items[]` 中的 `id`、`quote`、`translation_zh`、`source`、`page`；每条 quote 必须是候选中的一至两句、逐字不改且不超过 1200 字符。**只收作者明确承诺的未来行动**，如含 `future work`、`we will/plan/need to`、`今後` 的待做表达；只是在解释现有结果的 `could`、条件假设 `when ...`、方法评价 `will be effective`、读者推断、局限、相关工作一律不收。找不到则写空数组。先运行 `uv run "$FUTURE_WORK_SCRIPT" validate --items "<items.json>" --candidates "<debug>/candidates.json"`，失败即修正临时 JSON，绝不手工绕过。
+5. 验证成功后运行 `uv run "$FUTURE_WORK_SCRIPT" finalize --analysis "<analysis>" --items "<items.json>" --candidates "<debug>/candidates.json" --patch --pdf-sha256 "<prepare.pdf_sha256>"`。它先 patch Markdown 的专用节，成功后再原子写 `<analysis>.future_work.json`。**返回前必须确认 sidecar 存在且 `status: ok`、items 与 items.json 一致，并确认 Markdown 中 future-work 标题位于 `## 局限性与批判性评价` 与 `## 对自身研究的帮助评估` 之间。任一检查失败即返回 error，不得手写 Markdown、不得只报告抽取结果、不得把没有 sidecar 的状态说成完成。** 返回 sidecar、patch 路径和条目数。
 
 `gap-only` 的唯一可信 future-work 数据是 finalize 产出的 sidecar；它不从局限节、摘要预览或普通 Markdown 正则收割内容。
 
@@ -83,8 +113,8 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 按 `paper` 类型路由：
 
 - **粘贴文本**：直接用。
-- **本地 PDF 路径**：`PyMuPDF`（`import fitz`）内联提取全文文本。提取结果统一走 Step 1.5 统一 pdfx 质量分级（脚判定级，不主观判断），有坏页则走 OCR 兜底。
-- **本地文本文件路径（.txt/.md，④）**：`read` 读取全文。**可选元数据头**（`---` 分隔，OCR/预处理产物建议带）：
+- **本地 PDF 绝对路径**：先查 Step 1.5 的 OCR 缓存；未命中时用 `uv run "$PDF_RUNTIME_SCRIPT" extract ...` 提取全文。提取结果统一走 Step 1.5 的 pdfx 质量分级（脚判定级，不主观判断），有坏页则走 OCR 兜底。
+- **本地文本文件绝对路径（.txt/.md）**：`read` 读取全文。**可选元数据头**（`---` 分隔，OCR/预处理产物建议带）：
   ```
   TITLE: <标题>
   AUTHORS: <a, b>
@@ -95,8 +125,8 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
   <正文>
   ```
   解析它填元数据头（无则按「拿不到写 —」处理，作者归 `unknown`）。长全文（> 数千 token）直接用该路径传子代理（它已是文件，天然可分段读），并让子代理读文件而非正文。
-
-- **Zotero 条目**：通过 `zotero-read` 获取全文与元数据；只在当前分析过程中使用，不把连接信息、条目标识或本地附件路径写入公开输出。
+- **normalized paper-input JSON 绝对路径**：必须按「运行时路径与依赖规则」先运行 `PAPER_INPUT_SCRIPT`，将 stdout 写入 `paper_input.canonical.json`。从此只读取 canonical 文件中的 `abstract` 作为正文、`metadata` 作为元数据。该输入 evidence level 为 `abstract_only`；没有 PDF 时不得执行 PDF 质量检查或 OCR，不得假装拥有正文小节。
+- **旧版 Zotero item key（deprecated compatibility）**：仅为上游尚未迁移的调用方兼容，通过 `zotero-read` 获取全文与元数据；只在当前分析过程中使用，不把连接信息、条目标识或本地附件路径写入公开输出。
 
 长全文（> 数千 token）写入临时文件再分段读/传给子代理，避免上下文爆炸。
 
@@ -105,7 +135,7 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 **分级工具**（统一逻辑，脚本定级，**禁止 LLM 心算任何公式**）：
 
 ```bash
-   pdfx quality "<PDF 绝对路径>" --json
+uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main" pdfx quality "<PDF 绝对路径>" --json
 ```
 
 输出 JSON 含 `summary.tiers` 与逐页 `pages[].tier`（实现与阈值标定由 `pdf-processing-core` 提供）。四档含义与处置：
@@ -125,13 +155,13 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
   - 只有 trusted / washable → 干净，直接进 Step 2。
   - 少量 empty 页但 trusted 页充足（如扫描书里夹的空白页/封面）不单独触发——只把这类页当普通缺页处理。
 - 无缓存且触发 → 停下用 `question` 工具问一次：「该 PDF 有 N/M 页文字层损坏或为空（pdfx 分级），要我自动重识别这些页（vision-tools 视觉识别，每页约 0.5~1 分钟）还是你提供干净文本？」用户选自动才继续；选提供文本 → 收下用户给的文本/文本文件路径，进入 Step 2。
-- 无文件/条目载体的输入（粘贴文本、④ 乱码且无源 PDF）→ 不分级不写缓存，仅询问用户提供干净文本或源 PDF。
-- 自动重识别流程（**只识别坏页**——tier ∈ {untrusted, empty} 的页；好页保留 PyMuPDF 提取结果不动）：
-  1. 用 PyMuPDF 把每个坏页按 `Matrix(4,4)` 渲染为 PNG；
+- 无文件/条目载体的输入（粘贴文本、文本文件乱码且无源 PDF、normalized abstract JSON）→ 不分级不写缓存，仅询问用户提供干净文本或源 PDF。
+- 自动重识别流程（**只识别坏页**——tier ∈ {untrusted, empty} 的页；好页保留 `PDF_RUNTIME_SCRIPT extract` 提取结果不动）：
+  1. 对每个坏页运行 `uv run "$PDF_RUNTIME_SCRIPT" render "<PDF 绝对路径>" --page <1-based-page> --output "<temp-dir>/page-<N>.png" --scale 4`，等价于原有 `Matrix(4,4)` 渲染；
   2. 调用 `vision-tools` 的 `glance <页图> --ocr`（免费模型 429 → 自动切付费兜底，见 vision-tools skill）；
   3. 页内图让模型给出 `[图 p.XX-N: 类型+结构]` 描述（无图省略）；
   4. 某页连续失败：记录失败页，不重试死磕；失败页内容**不脑补**，缺失处标 `[?]`；
-  5. 按页序拼接完整全文 = 好页 PyMuPDF 文本 + 坏页识别文本。
+  5. 按页序拼接完整全文 = 好页 helper 提取文本 + 坏页识别文本。
 - **缓存写回**（写回后即成为下次命中；产物始终是完整全文）：
   - 本地 PDF 输入：PDF 同目录写 `<文件名>.llm_ocr.txt`；
   - 产物文件带头部元数据块（`TITLE:`/`AUTHORS:`/`YEAR:`/`VENUE:`/`DOI:`，填得到的才填）→ Step 2 直接解析。
@@ -145,7 +175,8 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 Title / 作者 / 期刊·会议 / 年份 / DOI / 本地 PDF 路径(有则)
 ```
 
-- **④ 文本文件**：解析文件头元数据块（`TITLE:`/`AUTHORS:`/`YEAR:`/`VENUE:`/`DOI:`，见 Step 1）填元数据头与保存文件名。
+- **文本文件**：解析文件头元数据块（`TITLE:`/`AUTHORS:`/`YEAR:`/`VENUE:`/`DOI:`，见 Step 1）填元数据头与保存文件名。
+- **normalized JSON**：只从 `paper_input.canonical.json` 的 `metadata` 填元数据；`source`/`item_key` 不进入公开元数据。
 - 拿不到的项目写「—」或省略，不编造。
 
 ### Step 3 — 并行子代理（Spawn 拓扑 · 拆 3 方向）

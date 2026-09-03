@@ -87,8 +87,9 @@ For saved local-PDF `mode: full`, include these instructions when spawning the r
    ```
 
    `source_anchors` and `confidence` are optional. Never put `future_work_ids` in the model draft; those IDs are joined deterministically from the validated future-work sidecar.
-3. Preserve the existing full-analysis Markdown quality and future-work evidence chain. Run `future_work.py prepare` for the source PDF before/alongside analysis. After synthesis, first write the completed Markdown to its final `<analysis>.md` path, then run `future_work.py upgrade-full-sidecar` so `<analysis>.md.future_work.json` is validated against prepared candidates and contains stable IDs/page numbers.
-4. Only after that future-work sidecar has `status: ok`, run:
+3. Preserve the existing full-analysis Markdown quality and future-work evidence chain. Run `future_work.py prepare` for the source PDF before Step 3. If the full-text OCR path already recognized pages that `prepare.ocr_required_pages` needs, reuse the exact page OCR text through `future_work.py merge-ocr`; never OCR an already-recognized page a second time just for future-work validation. Persist page-level OCR text alongside the full reconstructed-text cache so cached full runs can make the same deterministic merge. If a required candidate page is missing from the page cache, use the normal OCR authorization path for only that missing page.
+4. After synthesis, **write the completed Markdown to its final `<analysis>.md` path first**. `upgrade-full-sidecar` requires that file to exist. Only after the write succeeds, run `future_work.py upgrade-full-sidecar` against the prepared/merged candidates so `<analysis>.md.future_work.json` is validated and receives stable IDs/page numbers.
+5. Only after that future-work sidecar has `status: ok`, run:
 
    ```bash
    uv run "$FACTS_SCRIPT" validate --draft "<temp>/facts-draft.json"
@@ -100,8 +101,10 @@ For saved local-PDF `mode: full`, include these instructions when spawning the r
      --evidence-level fulltext
    ```
 
-5. Treat `facts.py` as the only writer/validator of `<analysis>.md.facts.json`. It supplies schema/version and the source fingerprint, verifies that the future-work sidecar belongs to the same analysis/evidence level/PDF fingerprint, and injects exact `future_work_ids`; do not hand-write or patch that sidecar.
-6. Return success for a saved local-PDF full run only after both sidecars exist with `status: ok`. A validation/finalization failure is an error, not a reason to silently omit a sidecar.
+6. Treat `facts.py` as the only writer/validator of `<analysis>.md.facts.json`. It supplies schema/version and the source fingerprint, verifies that the future-work sidecar belongs to the same analysis/evidence level/PDF fingerprint, and injects exact `future_work_ids`; do not hand-write or patch that sidecar.
+7. Return success for a saved local-PDF full run only after the Markdown file and both sidecars exist, with both sidecars at `status: ok`. A validation/finalization failure is an error, not a reason to silently omit a sidecar.
+
+The executable order for the saved local-PDF full path is therefore: **assemble → write Markdown → merge already-available OCR candidate pages if needed → upgrade/validate future-work sidecar → finalize facts → report success**.
 
 This keeps `facts.json` compact enough for downstream `professor-contact` Stage 2/3 and lets callers detect staleness by `schema`, `generator_version`, and `input_fingerprint` without re-reading the PDF.
 
@@ -121,7 +124,9 @@ This keeps `facts.json` compact enough for downstream `professor-contact` Stage 
 - Never add a second full-paper model call solely to create `facts.json`.
 - Never reconstruct structured facts by regex/grep over the human Markdown.
 - Never claim the three-artifact contract for non-PDF full-mode inputs.
+- Never run `upgrade-full-sidecar` before the final analysis Markdown exists on disk.
+- Never OCR a candidate page again when exact page OCR text from the same PDF is already available.
 - Keep temporary and generated output outside the source tree unless the user explicitly selects an output directory.
 - Consume the installed `pdf-processing-core` package/API only; do not depend on that repository's layout or an APM checkout path.
 - Do not import PyMuPDF from the host Python in the agent; use the uv-managed PDF runtime helper.
-- OCR behavior via `vision-tools` is unchanged.
+- OCR behavior via `vision-tools` is unchanged except that page-level OCR text is retained for deterministic future-work candidate reuse.

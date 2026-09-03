@@ -84,13 +84,35 @@ class AgentRuntimeContractTests(unittest.TestCase):
         self.assertIn("不得触发第二次全文模型调用", agent)
         self.assertIn("不得在最终 Markdown 落盘后用 regex/grep 反向提取 facts", agent)
         self.assertIn("保存的本地 PDF `full`", agent)
-        self.assertIn("非 PDF full 输入保持原有 Markdown 保存行为", agent)
+        self.assertIn("非 PDF full 输入", agent)
         self.assertIn("same analysis/evidence level/PDF fingerprint", skill)
         self.assertIn("three-artifact contract is intentionally limited to local-PDF full mode", skill)
         self.assertIn("future_work_ids", skill)
         self.assertIn("input_fingerprint", skill)
         self.assertIn("generator_version", skill)
         self.assertIn("upgrade-full-sidecar", skill)
+
+    def test_saved_pdf_full_writes_analysis_before_sidecar_finalizers(self):
+        text = AGENT.read_text(encoding="utf-8")
+        write_marker = "先把 Step 4 已组装完成的 Markdown 写到最终 analysis 路径"
+        upgrade_marker = 'uv run "$FUTURE_WORK_SCRIPT" upgrade-full-sidecar'
+        facts_marker = 'uv run "$FACTS_SCRIPT" finalize'
+        success_marker = "三者都存在"
+        self.assertLess(text.index(write_marker), text.index(upgrade_marker))
+        self.assertLess(text.index(upgrade_marker), text.index(facts_marker))
+        self.assertLess(text.index(facts_marker), text.index(success_marker))
+        self.assertIn("analysis.is_file()", text)
+        self.assertIn("不得在 analysis 文件尚未写入时调用 `upgrade-full-sidecar`", text)
+
+    def test_saved_pdf_full_reuses_page_ocr_before_future_work_upgrade(self):
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertIn(".llm_ocr.pages.json", text)
+        self.assertIn("future-work-ocr.json", text)
+        self.assertIn("不得对已经识别成功的页再次 OCR", text)
+        merge_marker = 'uv run "$FUTURE_WORK_SCRIPT" merge-ocr'
+        upgrade_marker = 'uv run "$FUTURE_WORK_SCRIPT" upgrade-full-sidecar'
+        self.assertLess(text.index(merge_marker), text.index(upgrade_marker))
+        self.assertIn("ocr_required_pages` 为空", text)
 
     def test_all_runtime_helpers_are_script_native(self):
         for path in (PAPER_INPUT, PDF_RUNTIME, FUTURE_WORK, FACTS):

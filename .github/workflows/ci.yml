@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: latest
+      - name: Authenticate git dependency fetches
+        run: |
+          git config --global url."https://x-access-token:${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+      - name: Sync locked environment
+        run: uv sync --locked
+      - name: Run unit tests
+        run: uv run python -m unittest discover -s .apm/skills/paper-analysis/tests -p 'test_*.py'
+      - name: Run uv integration tests
+        env:
+          PAPER_ANALYSIS_RUN_UV_INTEGRATION: "1"
+        run: uv run python -m unittest .apm/skills/paper-analysis/tests/test_uv_integration.py

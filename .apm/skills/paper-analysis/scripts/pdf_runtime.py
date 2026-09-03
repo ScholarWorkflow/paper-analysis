@@ -86,13 +86,12 @@ def read_json(path: Path) -> Any:
         return json.load(handle)
 
 
-def atomic_json(path: Path, payload: Any) -> None:
+def atomic_write(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent, text=True)
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
-            json.dump(payload, handle, ensure_ascii=False, sort_keys=True, indent=2)
-            handle.write("\n")
+            handle.write(text)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
@@ -102,6 +101,14 @@ def atomic_json(path: Path, payload: Any) -> None:
         except FileNotFoundError:
             pass
         raise
+
+
+def atomic_json(path: Path, payload: Any) -> None:
+    atomic_write(path, json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n")
+
+
+def fulltext_cache_metadata_path(cache_path: Path) -> Path:
+    return Path(str(cache_path) + ".meta.json")
 
 
 def validate_pages_payload(raw: Any) -> dict[str, str]:
@@ -120,6 +127,83 @@ def validate_pages_payload(raw: Any) -> dict[str, str]:
             raise ValueError(f"OCR text for page {page} must be non-empty")
         pages[page] = text
     return {str(page): pages[page] for page in sorted(pages)}
+
+
+def validate_fulltext_ocr_cache(
+    pdf_path: Path,
+    cache_path: Path,
+    output_path: Path | None = None,
+    expected_sha256: str | None = None,
+) -> dict[str, object]:
+    if not pdf_path.is_absolute():
+        raise ValueError("PDF path must be absolute")
+    if not pdf_path.is_file():
+        raise ValueError(f"PDF does not exist: {pdf_path}")
+    if not cache_path.is_absolute():
+        raise ValueError("cache path must be absolute")
+    if not cache_path.is_file():
+        raise ValueError(f"full-text OCR cache does not exist: {cache_path}")
+    if output_path is not None and not output_path.is_absolute():
+        raise ValueError("output path must be absolute")
+    if expected_sha256 is not None and (
+        not isinstance(expected_sha256, str) or not SHA256_RE.fullmatch(expected_sha256)
+    ):
+        raise ValueError("expected PDF SHA256 must be 64 lowercase hex characters")
+
+    current_sha256 = sha256_file(pdf_path)
+    if expected_sha256 is not None and current_sha256 != expected_sha256:
+        raise ValueError("current PDF fingerprint does not match expected PDF fingerprint")
+
+    metadata_path = fulltext_cache_metadata_path(cache_path)
+    if not metadata_path.is_file():
+        raise ValueError("full-text OCR cache metadata is missing")
+    metadata = read_json(metadata_path)
+    if not isinstance(metadata, dict) or metadata.get("schema") != 1:
+        raise ValueError("full-text OCR cache metadata must use schema 1")
+    if metadata.get("pdf_sha256") != current_sha256:
+        raise ValueError("full-text OCR cache fingerprint does not match current PDF fingerprint")
+
+    text = cache_path.read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError("full-text OCR cache must be non-empty")
+    if output_path is not None:
+        atomic_write(output_path, text)
+    return {
+        "ok": True,
+        "pdf_sha256": current_sha256,
+        "cache": str(cache_path),
+        "metadata": str(metadata_path),
+        "output": str(output_path) if output_path is not None else None,
+    }
+
+
+def update_fulltext_ocr_cache(pdf_path: Path, cache_path: Path, text_path: Path) -> dict[str, object]:
+    if not pdf_path.is_absolute():
+        raise ValueError("PDF path must be absolute")
+    if not pdf_path.is_file():
+        raise ValueError(f"PDF does not exist: {pdf_path}")
+    if not cache_path.is_absolute():
+        raise ValueError("cache path must be absolute")
+    if not text_path.is_absolute():
+        raise ValueError("text path must be absolute")
+    if not text_path.is_file():
+        raise ValueError(f"full-text OCR source does not exist: {text_path}")
+
+    text = text_path.read_text(encoding="utf-8")
+    if not text.strip():
+        raise ValueError("full-text OCR source must be non-empty")
+    pdf_sha256 = sha256_file(pdf_path)
+    metadata_path = fulltext_cache_metadata_path(cache_path)
+    # Write the text first and the fingerprint metadata last. A crash before the
+    # metadata write leaves a cache that validation treats as missing/stale.
+    atomic_write(cache_path, text)
+    atomic_json(metadata_path, {"schema": 1, "pdf_sha256": pdf_sha256})
+    return {
+        "ok": True,
+        "pdf_sha256": pdf_sha256,
+        "cache": str(cache_path),
+        "metadata": str(metadata_path),
+    }
 
 
 def validate_ocr_cache(
@@ -211,6 +295,17 @@ def main() -> int:
     render_parser.add_argument("--output", required=True, type=Path)
     render_parser.add_argument("--scale", type=float, default=4.0)
 
+    fulltext_validate_parser = commands.add_parser("validate-fulltext-ocr-cache")
+    fulltext_validate_parser.add_argument("--pdf", required=True, type=Path)
+    fulltext_validate_parser.add_argument("--cache", required=True, type=Path)
+    fulltext_validate_parser.add_argument("--output", type=Path)
+    fulltext_validate_parser.add_argument("--expected-sha256")
+
+    fulltext_update_parser = commands.add_parser("update-fulltext-ocr-cache")
+    fulltext_update_parser.add_argument("--pdf", required=True, type=Path)
+    fulltext_update_parser.add_argument("--cache", required=True, type=Path)
+    fulltext_update_parser.add_argument("--text", required=True, type=Path)
+
     cache_validate_parser = commands.add_parser("validate-ocr-cache")
     cache_validate_parser.add_argument("--pdf", required=True, type=Path)
     cache_validate_parser.add_argument("--cache", required=True, type=Path)
@@ -228,6 +323,12 @@ def main() -> int:
             result = extract_pdf(args.pdf, args.output)
         elif args.command == "render":
             result = render_page(args.pdf, args.page, args.output, args.scale)
+        elif args.command == "validate-fulltext-ocr-cache":
+            result = validate_fulltext_ocr_cache(
+                args.pdf, args.cache, args.output, expected_sha256=args.expected_sha256
+            )
+        elif args.command == "update-fulltext-ocr-cache":
+            result = update_fulltext_ocr_cache(args.pdf, args.cache, args.text)
         elif args.command == "validate-ocr-cache":
             result = validate_ocr_cache(args.pdf, args.cache, args.expected_sha256, args.output)
         else:

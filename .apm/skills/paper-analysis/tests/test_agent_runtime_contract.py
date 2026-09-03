@@ -126,6 +126,18 @@ class AgentRuntimeContractTests(unittest.TestCase):
         saved_full_merge_index = text.index(merge_marker, validate_index)
         self.assertLess(validate_index, saved_full_merge_index)
 
+    def test_persistent_fulltext_ocr_cache_is_fingerprint_bound_before_step3(self):
+        text = AGENT.read_text(encoding="utf-8")
+        validate_marker = 'uv run "$PDF_RUNTIME_SCRIPT" validate-fulltext-ocr-cache'
+        step3_marker = "### Step 3 — 并行子代理"
+        self.assertIn(".llm_ocr.txt.meta.json", text)
+        self.assertIn("持久完整正文 cache 禁止直接读取", text)
+        self.assertIn("validated-fulltext-ocr.txt", text)
+        self.assertIn('uv run "$PDF_RUNTIME_SCRIPT" update-fulltext-ocr-cache', text)
+        self.assertIn('--expected-sha256 "<prepare.pdf_sha256>"', text)
+        self.assertIn("不得进入 Step 3", text)
+        self.assertLess(text.index(validate_marker), text.index(step3_marker))
+
     def test_all_runtime_helpers_are_script_native(self):
         for path in (PAPER_INPUT, PDF_RUNTIME, FUTURE_WORK, FACTS):
             text = path.read_text(encoding="utf-8")

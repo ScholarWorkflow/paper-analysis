@@ -20,19 +20,29 @@ class FactsTests(unittest.TestCase):
         self.dir = Path(self.temp.name)
         self.analysis = self.dir / "analysis.md"
         self.analysis.write_text("# analysis\n", encoding="utf-8")
-        self.input = self.dir / "paper.txt"
-        self.input.write_text("full paper input\n", encoding="utf-8")
+        self.input = self.dir / "paper.pdf"
+        self.input.write_bytes(b"full paper input\n")
+        self.input_fingerprint = "sha256:" + hashlib.sha256(self.input.read_bytes()).hexdigest()
         self.future = self.dir / "analysis.md.future_work.json"
         self.future_id = hashlib.sha256(b"future quote").hexdigest()
-        self.future.write_text(
-            json.dumps({"status": "ok", "items": [{"id": self.future_id}]}),
-            encoding="utf-8",
-        )
+        self.write_future()
         self.draft = self.dir / "facts-draft.json"
         self.draft.write_text(json.dumps(self.valid_draft()), encoding="utf-8")
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def write_future(self, **overrides):
+        payload = {
+            "schema": 1,
+            "analysis": self.analysis.name,
+            "evidence_level": "fulltext",
+            "source_pdf_fingerprint": self.input_fingerprint,
+            "status": "ok",
+            "items": [{"id": self.future_id}],
+        }
+        payload.update(overrides)
+        self.future.write_text(json.dumps(payload), encoding="utf-8")
 
     def valid_draft(self):
         return {
@@ -76,11 +86,10 @@ class FactsTests(unittest.TestCase):
         )
         sidecar = Path(result["sidecar"])
         payload = json.loads(sidecar.read_text(encoding="utf-8"))
-        expected = hashlib.sha256(self.input.read_bytes()).hexdigest()
         self.assertEqual(payload["schema"], 1)
         self.assertEqual(payload["kind"], "paper-analysis-facts")
         self.assertEqual(payload["generator_version"], "facts-v1")
-        self.assertEqual(payload["input_fingerprint"], "sha256:" + expected)
+        self.assertEqual(payload["input_fingerprint"], self.input_fingerprint)
         self.assertEqual(payload["evidence_level"], "fulltext")
         self.assertEqual(payload["status"], "ok")
 
@@ -94,13 +103,34 @@ class FactsTests(unittest.TestCase):
             facts.validate_draft(raw)
 
     def test_invalid_future_work_sidecar_fails_closed(self):
-        self.future.write_text(json.dumps({"status": "error", "items": []}), encoding="utf-8")
+        self.write_future(status="error")
         with self.assertRaisesRegex(ValueError, "status: ok"):
+            facts.finalize(self.analysis, self.draft, self.future, self.input, "fulltext")
+
+    def test_future_work_analysis_mismatch_fails_closed(self):
+        self.write_future(analysis="other.md")
+        with self.assertRaisesRegex(ValueError, "analysis does not match"):
+            facts.finalize(self.analysis, self.draft, self.future, self.input, "fulltext")
+
+    def test_future_work_evidence_level_mismatch_fails_closed(self):
+        self.write_future(evidence_level="abstract_only")
+        with self.assertRaisesRegex(ValueError, "evidence_level does not match"):
+            facts.finalize(self.analysis, self.draft, self.future, self.input, "fulltext")
+
+    def test_future_work_source_fingerprint_mismatch_fails_closed(self):
+        self.write_future(source_pdf_fingerprint="sha256:" + "0" * 64)
+        with self.assertRaisesRegex(ValueError, "source fingerprint does not match"):
+            facts.finalize(self.analysis, self.draft, self.future, self.input, "fulltext")
+
+    def test_fulltext_requires_future_work_source_fingerprint(self):
+        self.write_future(source_pdf_fingerprint=None)
+        with self.assertRaisesRegex(ValueError, "source fingerprint does not match"):
             facts.finalize(self.analysis, self.draft, self.future, self.input, "fulltext")
 
     def test_input_fingerprint_changes_when_source_changes(self):
         first = facts.finalize(self.analysis, self.draft, self.future, self.input, "fulltext")
-        self.input.write_text("changed full paper input\n", encoding="utf-8")
+        self.input.write_bytes(b"changed full paper input\n")
+        self.write_future(source_pdf_fingerprint="sha256:" + hashlib.sha256(self.input.read_bytes()).hexdigest())
         second = facts.finalize(self.analysis, self.draft, self.future, self.input, "fulltext")
         self.assertNotEqual(first["input_fingerprint"], second["input_fingerprint"])
 

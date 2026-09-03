@@ -50,6 +50,54 @@ class PdfRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "absolute"):
             pdf_runtime.extract_pdf(Path("paper.pdf"), (self.dir / "out.txt").resolve())
 
+    def test_update_fulltext_ocr_cache_stamps_current_pdf_fingerprint(self):
+        source = (self.dir / "current-run-ocr.txt").resolve()
+        source.write_text("TITLE: Example\n---\ncurrent OCR body\n", encoding="utf-8")
+        cache = (self.dir / "paper.pdf.llm_ocr.txt").resolve()
+        result = pdf_runtime.update_fulltext_ocr_cache(self.pdf, cache, source)
+        metadata = json.loads(
+            pdf_runtime.fulltext_cache_metadata_path(cache).read_text(encoding="utf-8")
+        )
+        expected = hashlib.sha256(self.pdf.read_bytes()).hexdigest()
+        self.assertTrue(result["ok"])
+        self.assertEqual(cache.read_text(encoding="utf-8"), source.read_text(encoding="utf-8"))
+        self.assertEqual(metadata, {"schema": 1, "pdf_sha256": expected})
+
+    def test_validate_fulltext_ocr_cache_rejects_cache_after_pdf_changes(self):
+        source = (self.dir / "current-run-ocr.txt").resolve()
+        source.write_text("old OCR body", encoding="utf-8")
+        cache = (self.dir / "paper.pdf.llm_ocr.txt").resolve()
+        pdf_runtime.update_fulltext_ocr_cache(self.pdf, cache, source)
+        old_fingerprint = hashlib.sha256(self.pdf.read_bytes()).hexdigest()
+
+        # Replacing/updating the file at the same path must invalidate the old
+        # full-text OCR cache before any analysis worker can consume it.
+        self.pdf.write_bytes(self.pdf.read_bytes() + b"\n% updated source PDF\n")
+        self.assertNotEqual(hashlib.sha256(self.pdf.read_bytes()).hexdigest(), old_fingerprint)
+        output = (self.dir / "validated-fulltext.txt").resolve()
+        with self.assertRaisesRegex(ValueError, "full-text OCR cache fingerprint does not match"):
+            pdf_runtime.validate_fulltext_ocr_cache(self.pdf, cache, output)
+        self.assertFalse(output.exists())
+
+    def test_validate_fulltext_ocr_cache_rejects_legacy_unbound_cache(self):
+        cache = (self.dir / "paper.pdf.llm_ocr.txt").resolve()
+        cache.write_text("legacy OCR body", encoding="utf-8")
+        output = (self.dir / "validated-fulltext.txt").resolve()
+        with self.assertRaisesRegex(ValueError, "metadata is missing"):
+            pdf_runtime.validate_fulltext_ocr_cache(self.pdf, cache, output)
+        self.assertFalse(output.exists())
+
+    def test_validate_fulltext_ocr_cache_writes_only_validated_copy(self):
+        source = (self.dir / "current-run-ocr.txt").resolve()
+        source.write_text("fresh OCR body", encoding="utf-8")
+        cache = (self.dir / "paper.pdf.llm_ocr.txt").resolve()
+        pdf_runtime.update_fulltext_ocr_cache(self.pdf, cache, source)
+        output = (self.dir / "validated-fulltext.txt").resolve()
+        result = pdf_runtime.validate_fulltext_ocr_cache(self.pdf, cache, output)
+        self.assertTrue(result["ok"])
+        self.assertEqual(output.read_text(encoding="utf-8"), "fresh OCR body")
+        self.assertEqual(result["pdf_sha256"], hashlib.sha256(self.pdf.read_bytes()).hexdigest())
+
     def test_update_ocr_cache_stamps_current_pdf_fingerprint(self):
         pages = (self.dir / "ocr-pages.json").resolve()
         pages.write_text(json.dumps({"pages": {"1": "exact OCR text"}}), encoding="utf-8")

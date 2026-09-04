@@ -1,6 +1,6 @@
 ---
 name: paper-analysis
-description: 批判性阅读单篇论文（`mode: full`），在保存的本地 PDF full 模式下同时产出结构化 facts sidecar，或以可验证的原文候选精确生成/修补作者 future-work sidecar（`mode: gap-only`）。`gap-only` 只处理 future work，不问研究方向、不 spawn 分析叶子；以 future_work.py prepare/validate/finalize 作为唯一证据写入流程。由 paper-analysis skill 通过 task 启动。
+description: '批判性阅读单篇论文（`mode: full`），在保存的本地 PDF full 模式下同时产出结构化 facts sidecar，或以可验证的原文候选精确生成/修补作者 future-work sidecar（`mode: gap-only`）。`gap-only` 只处理 future work，不问研究方向、不 spawn 分析叶子；以 future_work.py prepare/validate/finalize 作为唯一证据写入流程。由 paper-analysis skill 通过 task 启动。'
 mode: subagent
 hidden: true
 temperature: 0.2

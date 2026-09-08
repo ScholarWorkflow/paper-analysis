@@ -57,7 +57,7 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
    - `PDF_RUNTIME_SCRIPT=<skill_dir>/scripts/pdf_runtime.py`
    - `FACTS_SCRIPT=<skill_dir>/scripts/facts.py`
    后续永远使用这些绝对路径，不假设当前工作目录位于仓库根目录。
-2. 四个 helper 都以 `uv run "<absolute-script>" ...` 执行。`future_work.py` 与 `pdf_runtime.py` 用 PEP 723 自举 `pdf-processing-core`；`paper_input.py` 与 `facts.py` 是无第三方依赖的 PEP 723 脚本。
+2. 四个 helper 都以 `uv run "<absolute-script>" ...` 执行。`future_work.py` 与 `pdf_runtime.py` 用 PEP 723 自举正式 release 发行版 `scholar-workflow-pdfx`（exact pin `0.1.0`）；`paper_input.py` 与 `facts.py` 是无第三方依赖的 PEP 723 脚本。
 3. normalized JSON 输入先执行：
    ```bash
    uv run "$PAPER_INPUT_SCRIPT" "<normalized-json-absolute-path>" > "<temp-dir>/paper_input.canonical.json"
@@ -73,11 +73,11 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
    uv run "$PDF_RUNTIME_SCRIPT" render "<PDF 绝对路径>" --page <1-based-page> --output "<temp-dir>/page-<N>.png" --scale 4
    ```
    不用宿主 Python 直接渲染。
-6. `pdfx` 不得假设全局安装。质量检查统一通过 uv 管理的 `pdf-processing-core`：
+6. `pdfx` 不得假设全局安装。质量检查统一通过 uv 运行正式 release 发行版的公共 CLI：
    ```bash
-   uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main" pdfx quality "<PDF 绝对路径>" --json
+   uvx --from "scholar-workflow-pdfx==0.1.0" pdfx quality "<PDF 绝对路径>" --json
    ```
-7. Python 代码只消费 `pdf-processing-core` 的公共包/API（`import pdfx`）和公共 CLI（`pdfx`），不得定位该仓库的 checkout、`lib/` 或 APM 安装路径。
+7. Python 代码只消费 `scholar-workflow-pdfx` 的公共包/API（`import pdfx`）和公共 CLI（`pdfx`），不得定位上游仓库的 checkout、`lib/` 或 APM 安装路径，也不得改用任何 Git URL 依赖。
 
 ## 输出规范
 
@@ -136,10 +136,10 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 **分级工具**（统一逻辑，脚本定级，**禁止 LLM 心算任何公式**）：
 
 ```bash
-uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main" pdfx quality "<PDF 绝对路径>" --json
+uvx --from "scholar-workflow-pdfx==0.1.0" pdfx quality "<PDF 绝对路径>" --json
 ```
 
-输出 JSON 含 `summary.tiers` 与逐页 `pages[].tier`（实现与阈值标定由 `pdf-processing-core` 提供）。四档含义与处置：
+输出 JSON 含 `summary.tiers` 与逐页 `pages[].tier`（实现与阈值标定由 `scholar-workflow-pdfx` 提供）。四档含义与处置：
 
 | tier | 含义 | 处置 |
 |---|---|---|

@@ -3,6 +3,3 @@ version: 0.1.0
 description: Deterministic evidence extraction for research paper analysis.
 targets: [opencode, codex]
 includes: auto
-dependencies:
-  apm:
-    - ScholarWorkflow/pdf-processing-core

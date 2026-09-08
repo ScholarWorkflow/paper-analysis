@@ -6,11 +6,67 @@ SKILL_ROOT = Path(__file__).parents[1]
 REPO_ROOT = Path(__file__).parents[4]
 AGENT = REPO_ROOT / ".apm/agents/paper-analysis.agent.md"
 SKILL = SKILL_ROOT / "SKILL.md"
+APM_YML = REPO_ROOT / "apm.yml"
+PYPROJECT = REPO_ROOT / "pyproject.toml"
+UVLOCK = REPO_ROOT / "uv.lock"
 PAPER_INPUT = SKILL_ROOT / "scripts/paper_input.py"
 PDF_RUNTIME = SKILL_ROOT / "scripts/pdf_runtime.py"
 FUTURE_WORK = SKILL_ROOT / "scripts/future_work.py"
 FACTS = SKILL_ROOT / "scripts/facts.py"
 FIXTURES = Path(__file__).parent / "fixtures"
+
+RELEASE_DISTRIBUTION = "scholar-workflow-pdfx"
+RELEASE_PIN = RELEASE_DISTRIBUTION + "==0.1.0"
+RELEASE_RANGE = RELEASE_DISTRIBUTION + ">=0.1.0,<0.2"
+
+# Forbidden moving-main patterns are composed at runtime so this test file
+# never contains the contiguous strings: a repo-wide forbidden-pattern grep
+# must stay clean while the gate itself still matches real occurrences.
+FORBIDDEN_GIT_MAIN_DEP = "pdf-processing-core" + ".git@main"
+FORBIDDEN_GIT_URL = "git+https://github.com/ScholarWorkflow/" + "pdf-processing-core"
+FORBIDDEN_BRANCH_MAIN = 'branch ' + '= "main"'
+FORBIDDEN_LOCK_GIT_SOURCE = (
+    'source = { git = "https://github.com/ScholarWorkflow/' + 'pdf-processing-core'
+)
+
+CENTRAL_RUNTIME_MARKERS = (
+    "scholarflow-codex",
+    "central-launcher",
+    "central normalizer",
+    "consumer overlay",
+)
+
+PRODUCTION_FILES = (AGENT, SKILL, PAPER_INPUT, PDF_RUNTIME, FUTURE_WORK, FACTS, APM_YML, PYPROJECT)
+
+REQUIRED_ORCHESTRATION_CONVENTIONS = (
+    # (convention id, exact marker that must appear in the agent body)
+    ("coordinator identity", "specialized coordinator child"),
+    ("no-recursion", "不要加载 `paper-analysis` skill"),
+    ("full leaf no-child-spawn", "不再分派子工作"),
+    ("gap-only no full leaves", "绝不进入 Step 3 或 spawn"),
+    ("native question priority", "必须优先使用原生 `question`"),
+    ("needs_input no silent default", "不得静默选择默认值"),
+    ("needs_input same-thread resume", "resume 同一 coordinator"),
+    ("convention not security boundary", "不是安全边界"),
+)
+
+
+def assert_orchestration_contract(agent_text: str) -> None:
+    """Raise AssertionError when a required orchestration convention is missing.
+
+    This is the single gate for the producer-local coordination conventions that
+    must survive every runtime projection (OpenCode native fields and the Codex
+    developer_instructions body).
+    """
+    missing = [
+        name
+        for name, marker in REQUIRED_ORCHESTRATION_CONVENTIONS
+        if marker not in agent_text
+    ]
+    if missing:
+        raise AssertionError(
+            "missing orchestration conventions: " + ", ".join(missing)
+        )
 
 
 class AgentRuntimeContractTests(unittest.TestCase):
@@ -144,10 +200,119 @@ class AgentRuntimeContractTests(unittest.TestCase):
             self.assertIn("# /// script", text, path.name)
             self.assertIn("# requires-python", text, path.name)
 
-    def test_pdf_helpers_bootstrap_pdf_processing_core(self):
+    # ------------------------------------------------------------------
+    # Dependency distribution contract (release package, no moving main)
+    # ------------------------------------------------------------------
+
+    def test_pep723_helpers_pin_release_distribution_exactly(self):
         for path in (PDF_RUNTIME, FUTURE_WORK):
             text = path.read_text(encoding="utf-8")
-            self.assertIn("pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main", text)
+            self.assertIn(f'#   "{RELEASE_PIN}"', text, path.name)
+            self.assertNotIn(FORBIDDEN_GIT_MAIN_DEP, text, path.name)
+            self.assertNotIn(FORBIDDEN_GIT_URL, text, path.name)
+
+    def test_public_pdfx_import_surface_is_preserved(self):
+        text = FUTURE_WORK.read_text(encoding="utf-8")
+        self.assertIn("from pdfx.quality import score_page", text)
+
+    def test_root_project_depends_on_release_range(self):
+        text = PYPROJECT.read_text(encoding="utf-8")
+        self.assertIn(f'dependencies = ["{RELEASE_RANGE}"]', text)
+        self.assertNotIn("[tool.uv.sources]", text)
+        self.assertNotIn(FORBIDDEN_GIT_URL, text)
+
+    def test_lockfile_pins_registry_release_resolution(self):
+        text = UVLOCK.read_text(encoding="utf-8")
+        self.assertIn(f'name = "{RELEASE_DISTRIBUTION}"', text)
+        self.assertIn('source = { registry = "https://pypi.org/simple" }', text)
+        self.assertNotIn(FORBIDDEN_LOCK_GIT_SOURCE, text)
+        self.assertNotIn('name = "pdf-processing-core"', text)
+
+    def test_apm_manifest_targets_both_runtimes_without_git_main_dependency(self):
+        text = APM_YML.read_text(encoding="utf-8")
+        self.assertIn("targets: [opencode, codex]", text)
+        self.assertNotIn("pdf-processing-core", text)
+
+    def test_no_moving_main_dependency_in_production_text(self):
+        forbidden = (
+            FORBIDDEN_GIT_MAIN_DEP,
+            FORBIDDEN_GIT_URL,
+            FORBIDDEN_BRANCH_MAIN,
+        )
+        for path in PRODUCTION_FILES:
+            text = path.read_text(encoding="utf-8")
+            for pattern in forbidden:
+                self.assertNotIn(
+                    pattern,
+                    text,
+                    f"{path.name} contains moving-main dependency: {pattern!r}",
+                )
+
+    def test_no_central_runtime_or_consumer_overlay_dependency(self):
+        for path in PRODUCTION_FILES:
+            text = path.read_text(encoding="utf-8")
+            for marker in CENTRAL_RUNTIME_MARKERS:
+                self.assertNotIn(
+                    marker,
+                    text,
+                    f"{path.name} must not depend on central runtime {marker!r}",
+                )
+
+    def test_pdfx_quality_cli_uses_release_distribution(self):
+        agent = AGENT.read_text(encoding="utf-8")
+        skill = SKILL.read_text(encoding="utf-8")
+        expected = f'uvx --from "{RELEASE_PIN}" pdfx quality'
+        self.assertIn(expected, agent)
+        self.assertIn(expected, skill)
+        self.assertNotIn('pdfx quality "<PDF 绝对路径>" --json`', agent)
+
+    # ------------------------------------------------------------------
+    # Producer-local orchestration contract
+    # ------------------------------------------------------------------
+
+    def test_apm_openagent_frontmatter_keeps_opencode_native_contract(self):
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertIn("mode: subagent", text)
+        self.assertIn("hidden: true", text)
+        self.assertIn("temperature: 0.2", text)
+        self.assertIn("permission:", text)
+        for tool in ("read", "glob", "grep", "edit", "write", "bash", "task", "skill", "question", "todowrite", "external_directory"):
+            self.assertIn(f"{tool}: allow", text)
+
+    def test_helpers_are_located_from_installed_skill_absolute_dir(self):
+        text = AGENT.read_text(encoding="utf-8")
+        for line in (
+            "FUTURE_WORK_SCRIPT=<skill_dir>/scripts/future_work.py",
+            "PAPER_INPUT_SCRIPT=<skill_dir>/scripts/paper_input.py",
+            "PDF_RUNTIME_SCRIPT=<skill_dir>/scripts/pdf_runtime.py",
+            "FACTS_SCRIPT=<skill_dir>/scripts/facts.py",
+        ):
+            self.assertIn(line, text)
+        self.assertIn("不假设当前工作目录位于仓库根目录", text)
+
+    def test_opencode_native_question_path_takes_priority(self):
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertIn("question` 工具", text)
+        assert_orchestration_contract(text)
+
+    def test_orchestration_contract_holds_for_canonical_agent(self):
+        assert_orchestration_contract(AGENT.read_text(encoding="utf-8"))
+
+    def test_orchestration_conventions_are_load_bearing(self):
+        """Mutation-style check: deleting any convention line must fail the gate."""
+        text = AGENT.read_text(encoding="utf-8")
+        for name, marker in REQUIRED_ORCHESTRATION_CONVENTIONS:
+            with self.subTest(convention=name):
+                mutated = "\n".join(
+                    line for line in text.splitlines() if marker not in line
+                )
+                self.assertNotIn(marker, mutated)
+                with self.assertRaises(AssertionError):
+                    assert_orchestration_contract(mutated)
+
+    def test_convention_gate_is_not_vacuous(self):
+        with self.assertRaises(AssertionError):
+            assert_orchestration_contract("")
 
 
 if __name__ == "__main__":

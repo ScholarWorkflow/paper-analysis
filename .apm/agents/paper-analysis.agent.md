@@ -27,9 +27,17 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 - 分析可以拆分为多个只读工作单元；工作单元不得修改输入论文或生成未经核验的证据。
 - 协调器只负责分派分析工作，不应递归分派协调器。
 - **绝不递归**：不要加载 `paper-analysis` skill，也不要 spawn 另一个 `paper-analysis` 子代理（会形成无限递归 / 突破 depth）。
-- 工作单元只读全文并直接返回 Markdown，不再分派子工作。
+- 工作单元只读全文并直接返回 Markdown，不再分派子工作，也不加载 coordinator skill。
 - 任何分析单元失败都必须明确报告，不得用猜测补齐。
 - **facts 不得触发第二次全文模型调用**：保存的本地 PDF `full` 模式只允许在现有三路全文分析和协调器同一次组装过程中形成 `facts-draft.json`；不得为 facts 再 spawn 一个阅读全文的模型任务，也不得在最终 Markdown 落盘后用 regex/grep 反向提取 facts。
+
+## 交互与运行时兼容约定（orchestration convention）
+
+本节是编排约定，不是安全边界（ACL）：frontmatter 的 `permission` map 等 OpenCode 原生字段在 Codex projection 中没有等价物，本节不伪造等价 ACL，只声明操作约束。
+
+- `paper-analysis` 是 specialized coordinator child：由调用方按 exact name 启动，负责同一篇论文的完整 workflow；它不是 generic leaf，也不承担无关任务。
+- 运行时提供原生 `question` 工具（如 OpenCode）时，必须优先使用原生 `question` 获取用户输入，下列 fallback 不得覆盖它。
+- 运行时没有 `question` 工具时（如 Codex），缺 `paper`、缺 `save`/`patch_analysis`、缺可定位 PDF 或缺 OCR 授权等必要用户输入时，不得静默选择默认值：必须 yield 一个明确的 `needs_input` 状态，至少包含 ①缺哪个字段/授权 ②要向用户提出的问题 ③明确要求 parent 在获得答案后 resume 同一 coordinator 线程继续，而不是结束本 coordinator 后新开 generic child。
 
 ## 输入（由 task prompt 传入）
 
@@ -57,7 +65,7 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
    - `PDF_RUNTIME_SCRIPT=<skill_dir>/scripts/pdf_runtime.py`
    - `FACTS_SCRIPT=<skill_dir>/scripts/facts.py`
    后续永远使用这些绝对路径，不假设当前工作目录位于仓库根目录。
-2. 四个 helper 都以 `uv run "<absolute-script>" ...` 执行。`future_work.py` 与 `pdf_runtime.py` 用 PEP 723 自举 `pdf-processing-core`；`paper_input.py` 与 `facts.py` 是无第三方依赖的 PEP 723 脚本。
+2. 四个 helper 都以 `uv run "<absolute-script>" ...` 执行。`future_work.py` 与 `pdf_runtime.py` 用 PEP 723 自举正式 release 发行版 `scholar-workflow-pdfx`（exact pin `0.1.0`）；`paper_input.py` 与 `facts.py` 是无第三方依赖的 PEP 723 脚本。
 3. normalized JSON 输入先执行：
    ```bash
    uv run "$PAPER_INPUT_SCRIPT" "<normalized-json-absolute-path>" > "<temp-dir>/paper_input.canonical.json"
@@ -73,11 +81,11 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
    uv run "$PDF_RUNTIME_SCRIPT" render "<PDF 绝对路径>" --page <1-based-page> --output "<temp-dir>/page-<N>.png" --scale 4
    ```
    不用宿主 Python 直接渲染。
-6. `pdfx` 不得假设全局安装。质量检查统一通过 uv 管理的 `pdf-processing-core`：
+6. `pdfx` 不得假设全局安装。质量检查统一通过 uv 运行正式 release 发行版的公共 CLI：
    ```bash
-   uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main" pdfx quality "<PDF 绝对路径>" --json
+   uvx --from "scholar-workflow-pdfx==0.1.0" pdfx quality "<PDF 绝对路径>" --json
    ```
-7. Python 代码只消费 `pdf-processing-core` 的公共包/API（`import pdfx`）和公共 CLI（`pdfx`），不得定位该仓库的 checkout、`lib/` 或 APM 安装路径。
+7. Python 代码只消费 `scholar-workflow-pdfx` 的公共包/API（`import pdfx`）和公共 CLI（`pdfx`），不得定位上游仓库的 checkout、`lib/` 或 APM 安装路径，也不得改用任何 Git URL 依赖。
 
 ## 输出规范
 
@@ -136,10 +144,10 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 **分级工具**（统一逻辑，脚本定级，**禁止 LLM 心算任何公式**）：
 
 ```bash
-uv run --with "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main" pdfx quality "<PDF 绝对路径>" --json
+uvx --from "scholar-workflow-pdfx==0.1.0" pdfx quality "<PDF 绝对路径>" --json
 ```
 
-输出 JSON 含 `summary.tiers` 与逐页 `pages[].tier`（实现与阈值标定由 `pdf-processing-core` 提供）。四档含义与处置：
+输出 JSON 含 `summary.tiers` 与逐页 `pages[].tier`（实现与阈值标定由 `scholar-workflow-pdfx` 提供）。四档含义与处置：
 
 | tier | 含义 | 处置 |
 |---|---|---|

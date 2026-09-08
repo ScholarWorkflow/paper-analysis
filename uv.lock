@@ -34,7 +34,7 @@ name = "paper-analysis"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "pdf-processing-core" },
+    { name = "scholar-workflow-pdfx" },
 ]
 
 [package.dev-dependencies]
@@ -43,18 +43,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pdf-processing-core", git = "https://github.com/ScholarWorkflow/pdf-processing-core.git?branch=main" }]
+requires-dist = [{ name = "scholar-workflow-pdfx", specifier = ">=0.1.0,<0.2" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "pytest", specifier = ">=8.3,<9" }]
-
-[[package]]
-name = "pdf-processing-core"
-version = "0.1.0"
-source = { git = "https://github.com/ScholarWorkflow/pdf-processing-core.git?branch=main#53c214f6e828eda3e238eeec1890208e09a43b5d" }
-dependencies = [
-    { name = "pymupdf" },
-]
 
 [[package]]
 name = "pluggy"
@@ -106,4 +98,16 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a3/5c/00a0e072241553e1a7496d638deababa67c5058571567b92a7eaa258397c/pytest-8.4.2.tar.gz", hash = "sha256:86c0d0b93306b961d58d62a4db4879f27fe25513d4b969df351abdddb3c30e01", size = 1519618, upload-time = "2025-09-04T14:34:22.711Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a8/a4/20da314d277121d6534b3a980b29035dcd51e6744bd79075a6ce8fa4eb8d/pytest-8.4.2-py3-none-any.whl", hash = "sha256:872f880de3fc3a5bdc88a11b39c9710c3497a547cfa9320bc3c5e62fbf272e79", size = 365750, upload-time = "2025-09-04T14:34:20.226Z" },
+]
+
+[[package]]
+name = "scholar-workflow-pdfx"
+version = "0.1.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pymupdf" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f4/a4/bf8543749a2cc8a16284d937271b6eb898053692248de78170dc9b3d5db4/scholar_workflow_pdfx-0.1.0.tar.gz", hash = "sha256:0e0993042d377686b685a63f1787f7005fb736c5334924ba74514fc5dee8a55f", size = 95002, upload-time = "2026-09-07T06:47:36.522Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/24/f6/d30fb47293232ee500bf0d5f6c2f74030fe0b09b9b5ed25a0701f793a97d/scholar_workflow_pdfx-0.1.0-py3-none-any.whl", hash = "sha256:88cfb616ecfb21184938763ae9432dbed95e466a4a5b52f874c43e2a835f5773", size = 107350, upload-time = "2026-09-07T06:47:35.193Z" },
 ]

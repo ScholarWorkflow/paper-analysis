@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.11"
 # dependencies = [
-#   "pdf-processing-core @ git+https://github.com/ScholarWorkflow/pdf-processing-core.git@main",
+#   "scholar-workflow-pdfx==0.1.0",
 # ]
 # ///
 """Deterministic future-work evidence helper for paper-analysis.

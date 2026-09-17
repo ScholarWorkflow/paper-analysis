@@ -16,6 +16,7 @@ SKILL_TREE = REPO_ROOT / ".apm" / "skills" / "paper-analysis"
 FORBIDDEN_NAMES = {
     "CODEX_FULL_MODE_RUNTIME_RECIPE.md",
     "verify_codex_full_mode_topology.py",
+    "verify_codex_nested_capability_probe.py",
 }
 
 

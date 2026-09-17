@@ -215,6 +215,7 @@ assert isinstance(instructions, str) and instructions
 required = {
     "full_delegation_required": "Codex full Step 3 必须使用运行时原生 subagent delegation",
     "no_inline_replacement": "coordinator 不得 inline 执行三路分析来替代 delegation",
+    "exactly_three_delegated_units": "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
 }
 checks = {key: marker in instructions for key, marker in required.items()}
 assert all(checks.values())
@@ -458,7 +459,8 @@ output/git-diff-check.txt
 - lock `resolved_commit == FINAL_HEAD_SHA`；
 - fixture repo exact SHA 且 dirty=no；
 - `manual_patch=no`；
-- generated Codex projection 保留两个 exact orchestration markers；
+- generated Codex projection 保留全部三条 exact behavior markers（含
+  exactly-3 delegated units 指令），丢任一条即 `FAIL_PRODUCER`；
 - `/eval` execution healthy，version 有 provenance；
 - root 恰有 1 个 formal direct outer child；
 - outer child 有恰好 `3` 个 distinct formal direct `spawnAgent` nested child；

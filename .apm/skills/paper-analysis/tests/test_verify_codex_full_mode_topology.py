@@ -142,9 +142,9 @@ def test_started_and_completed_of_same_edge_deduplicate() -> None:
     assert verdict["formal_spawn_relation_count"] == 2
 
 
-def test_started_without_concrete_receivers_is_ignored() -> None:
+def test_started_without_concrete_receivers_and_sender_is_ignored() -> None:
     events = [
-        spawn(ROOT_THREAD, [], method="item/started"),
+        spawn(ROOT_THREAD, None, method="item/started", include_sender=False),
         spawn(ROOT_THREAD, [OUTER_THREAD]),
         spawn(OUTER_THREAD, [NESTED_A]),
     ]
@@ -290,6 +290,24 @@ def test_invalid_completed_spawn_without_concrete_receivers() -> None:
     events = [
         spawn(ROOT_THREAD, [OUTER_THREAD]),
         spawn(OUTER_THREAD, [], method="item/completed"),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+
+
+def test_invalid_started_spawn_with_concrete_receivers_without_sender() -> None:
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [NESTED_A], method="item/started", include_sender=False),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+
+
+def test_invalid_completed_spawn_without_concrete_receivers_and_sender() -> None:
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [], method="item/completed", include_sender=False),
     ]
     verdict = verify_topology(eval_response(events), contract())
     assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE

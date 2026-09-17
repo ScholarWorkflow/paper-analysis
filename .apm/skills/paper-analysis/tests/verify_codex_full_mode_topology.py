@@ -223,13 +223,6 @@ def _formal_edges(
             continue
         if item.get("tool") != rules["formal_tool"]:
             continue
-        sender = item.get("senderThreadId")
-        if not isinstance(sender, str) or not sender:
-            problems.append(
-                f"app_server_events[{index}]: formal {rules['formal_tool']} "
-                "relation has no non-empty string senderThreadId"
-            )
-            continue
         receivers = item.get("receiverThreadIds")
         if receivers is None or receivers == []:
             if method == method_completed:
@@ -245,6 +238,13 @@ def _formal_edges(
             problems.append(
                 f"app_server_events[{index}]: formal {rules['formal_tool']} "
                 "relation has malformed receiverThreadIds"
+            )
+            continue
+        sender = item.get("senderThreadId")
+        if not isinstance(sender, str) or not sender:
+            problems.append(
+                f"app_server_events[{index}]: formal {rules['formal_tool']} "
+                "relation has no non-empty string senderThreadId"
             )
             continue
         for receiver in receivers:

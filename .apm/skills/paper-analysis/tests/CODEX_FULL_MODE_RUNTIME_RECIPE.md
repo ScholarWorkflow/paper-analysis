@@ -340,8 +340,11 @@ verifier 必须执行：
 4. 从 `output.app_server_events` 按 pinned contract 提取 formal
    `spawnAgent` ownership（`item/started` | `item/completed`、
    `message.params.item`、`item.type == collabAgentToolCall`、
-   `item.tool == spawnAgent`、非空 `senderThreadId`、非空字符串数组
-   `receiverThreadIds`）；
+   `item.tool == spawnAgent`）；先读取并校验 `receiverThreadIds`：
+   `item/started` 没有 concrete receiver 时忽略（即使没有
+   `senderThreadId`），`item/completed` 没有 concrete receiver 时判
+   `INVALID_EVIDENCE`；只有存在 concrete receiver 后才要求非空
+   `senderThreadId`；
 5. dedupe started/completed 的同一 formal edge；
 6. root direct formal child 数量：`0` → `BLOCKED`；`>1` → `BLOCKED`；
    `==1` → 得到 `outer_thread_id`；
@@ -514,7 +517,15 @@ BLOCKED。**
 
 ## 14. Retry / invalidation
 
-- retry 保持同一 input、prompt、model、reasoning、sandbox、config；
+- 每个 final SHA 的正式 acceptance 只产生一个 verdict；
+- `FAIL_PRODUCER` 一旦成立即终止该 SHA 的 acceptance，不得用同一 SHA
+  后续无变更重跑得到的 `PASS` 覆盖；
+- 只有 `BLOCKED`（例如 provider / harness transient）允许在同一
+  input、prompt、model、reasoning、sandbox、config 下做有界 retry；
+- 若要从 `FAIL_PRODUCER` 重新获得正式 `PASS`，必须先修复 producer、生成并
+  push 新的 final SHA，再按本文重建 clean consumer 并运行一次正式 acceptance；
+- `INVALID_EVIDENCE` 不得通过 retry-until-green 覆盖，必须先修复损坏或矛盾的
+  evidence/source；
 - 不换模型、不提高 reasoning、不改 prompt、不手动告诉 outer child spawn；
 - 不修改 shared fixtures/eval-server 追绿；
 - 不通过删改 `child_thread_reads` 或 identity events 制造 PASS（本 producer

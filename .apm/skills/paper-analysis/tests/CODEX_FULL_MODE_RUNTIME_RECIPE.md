@@ -260,7 +260,11 @@ args = [
     "--config", f'projects."{consumer}".trust_level="trusted"',
     "--", prompt,
 ]
-request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 300}
+request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 900}
+# timeout: caller-side wall-clock budget for one full nested run
+# (root -> coordinator -> nested leaves -> assembly). 300s proved too small
+# once delegation actually happens; this budget caps the run, it never
+# changes model, reasoning, sandbox or prompt.
 (run_root / "config/eval-request.json").write_text(
     json.dumps(request, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",

@@ -2,8 +2,8 @@ import unittest
 from pathlib import Path
 
 
-SKILL_ROOT = Path(__file__).parents[1]
-REPO_ROOT = Path(__file__).parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = REPO_ROOT / ".apm/skills/paper-analysis"
 AGENT = REPO_ROOT / ".apm/agents/paper-analysis.agent.md"
 SKILL = SKILL_ROOT / "SKILL.md"
 APM_YML = REPO_ROOT / "apm.yml"

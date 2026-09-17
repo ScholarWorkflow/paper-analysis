@@ -8,7 +8,7 @@ from pathlib import Path
 import pymupdf
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).resolve().parents[1] / ".apm/skills/paper-analysis"
 SCRIPT = ROOT / "scripts/pdf_runtime.py"
 SPEC = importlib.util.spec_from_file_location("pdf_runtime", SCRIPT)
 pdf_runtime = importlib.util.module_from_spec(SPEC)

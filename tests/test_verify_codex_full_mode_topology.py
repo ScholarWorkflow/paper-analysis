@@ -476,7 +476,10 @@ def _write_contract(tmp_path: pathlib.Path) -> pathlib.Path:
 
 
 def test_cli_end_to_end_exit_codes(tmp_path: pathlib.Path) -> None:
-    verifier = pathlib.Path(__file__).parent / "verify_codex_full_mode_topology.py"
+    verifier = (
+        pathlib.Path(__file__).resolve().parent
+        / "runtime/verify_codex_full_mode_topology.py"
+    )
     contract_path = _write_contract(tmp_path)
 
     pass_response = tmp_path / "pass-response.json"

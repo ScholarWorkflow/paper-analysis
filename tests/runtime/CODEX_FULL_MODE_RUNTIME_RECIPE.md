@@ -178,8 +178,12 @@ printf '%s\n' 'apm install --target codex' >"$RUN_ROOT/output/install-command.tx
 ```bash
 test -f "$CONSUMER/apm.lock.yaml"
 test -f "$CONSUMER/.codex/agents/paper-analysis.toml"
-test -f "$CONSUMER/.agents/skills/paper-analysis/tests/fixtures/paper.txt"
+test -f "$CONSUMER/.agents/skills/paper-analysis/SKILL.md"
 ```
+
+production install tree 只保留真实运行资产（`SKILL.md`、`scripts/` 等）；
+producer test tree 全部位于 repo 级 `tests/`，不随 skill 分发。安装树内的
+test-only artifacts 机械排除见 §6 purity preflight。
 
 用 `yq` 证明 lock 确实 pin 到 final Git commit。APM 0.29 lockfile 把
 `repo_url` 归一化为小写 `owner/repo`（不是 `https://...` URL 形式），原始
@@ -192,7 +196,37 @@ yq -e '.dependencies[] | select(.resolved_commit == strenv(FINAL_HEAD_SHA)) | se
 cp "$CONSUMER/apm.lock.yaml" "$RUN_ROOT/output/apm.lock.yaml"
 ```
 
-## 6. Generated projection check
+## 6. Clean-consumer purity preflight
+
+test-only artifacts 一旦进入 production skill 安装树，被测 agent 就能读到
+测试执行知识并改变正式入口行为；这种 run 属于 test setup contamination，
+不能产生 producer 行为结论。安装后在任何 `/eval` 调用之前机械检查，任一
+命中立即 `BLOCKED / NOT TESTED`：不得继续 runtime topology，更不得据此判
+`FAIL_PRODUCER`。
+
+```bash
+PURITY_OUT="$RUN_ROOT/output/purity-preflight.txt"
+
+LEAKS="$(find "$CONSUMER/.agents/skills/paper-analysis" \
+  \( -name 'CODEX_FULL_MODE_RUNTIME_RECIPE.md' \
+     -o -name 'verify_codex_full_mode_topology.py' \))"
+
+if [ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] || [ -n "$LEAKS" ]; then
+  {
+    printf 'installed_tests_dir=%s\n' "$(
+      [ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] && echo present || echo absent
+    )"
+    [ -n "$LEAKS" ] && printf '%s\n' "$LEAKS"
+  } >"$PURITY_OUT"
+  cat "$PURITY_OUT"
+  echo 'purity_preflight=FAIL -> BLOCKED / NOT TESTED'
+  exit 1
+fi
+
+printf '%s\n' 'purity_preflight=pass' >"$PURITY_OUT"
+```
+
+## 7. Generated projection check
 
 安装后只检查本 issue 的行为 contract，不用 TOML `name` 做 runtime
 identity gate：
@@ -232,11 +266,16 @@ out = {
 PY
 ```
 
-## 7. Fixed input / prompt
+## 8. Fixed input / prompt
 
 ```bash
-PAPER_TXT="$CONSUMER/.agents/skills/paper-analysis/tests/fixtures/paper.txt"
 mkdir -p "$CONSUMER/runtime-output"
+
+# canonical input 仍是 producer-owned fixture：从 producer exact SHA
+# checkout 的 repo 级 fixture 复制进本次独占 run root；root prompt 只引用
+# $RUN_ROOT 下的路径，不引用 consumer 安装树内路径。
+cp "$PRODUCER_REPO/tests/fixtures/paper.txt" "$RUN_ROOT/config/paper.txt"
+PAPER_TXT="$RUN_ROOT/config/paper.txt"
 
 cat >"$RUN_ROOT/config/research-direction.txt" <<'EOF'
 研究方向：测试用最小方向。只用于触发正式 full-mode Step 3，不评价论文质量。
@@ -256,7 +295,7 @@ EOF
 
 禁止临场修改 prompt / fixture。
 
-## 8. Execution — existing eval service only
+## 9. Execution — existing eval service only
 
 从既有 eval-server checkout 读取端口，不管理服务生命周期：
 
@@ -323,10 +362,10 @@ parse_codex_eval_evidence.py ... 作为 PASS/FAIL/BLOCKED gate
 adapter 通过”。原始响应完整保存；本 producer topology verifier 根本不消费
 identity surface。
 
-## 9. Producer topology verifier
+## 10. Producer topology verifier
 
 ```bash
-python3 "$PRODUCER_REPO/.apm/skills/paper-analysis/tests/verify_codex_full_mode_topology.py" \
+python3 "$PRODUCER_REPO/tests/runtime/verify_codex_full_mode_topology.py" \
   --eval-response "$RUN_ROOT/output/eval-response.json" \
   --contract "$FIXTURES_DIR/configs/codex-eval-adapter-contract.json" \
   --output "$RUN_ROOT/output/runtime-topology.json"
@@ -381,7 +420,7 @@ verdict 输出字段（无任何暗示 identity 已验收的名称）：
 verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
 `3` INVALID_EVIDENCE。
 
-## 10. Producer deterministic suite
+## 11. Producer deterministic suite
 
 ```bash
 (
@@ -402,7 +441,7 @@ verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
 JSON/JSONL、YAML/TOML 的正式判断使用结构化 parser（`jq` / `yq` /
 `tomllib`），不用 grep/sed/awk 代替字段判定。
 
-## 11. Interaction
+## 12. Interaction
 
 无。`paper`、`research_direction_file`、`mode`、`save` 全部固定提供；tiny
 `.txt` fixture 不触发 PDF/OCR/Zotero/MCP/browser/user approval。
@@ -415,7 +454,7 @@ JSON/JSONL、YAML/TOML 的正式判断使用结构化 parser（`jq` / `yq` /
 - 只有在 evidence 已明确进入唯一 outer child 的 producer-owned full path，
   且固定完整输入理应足够时，才可按 producer behavior 判 FAIL。
 
-## 12. Evidence
+## 13. Evidence
 
 至少保留：
 
@@ -434,6 +473,7 @@ output/consumer-apm.yml
 output/apm.lock.yaml
 output/apm-install.stdout.txt
 output/apm-install.stderr.txt
+output/purity-preflight.txt
 output/generated-projection.json
 output/eval-request.json
 output/eval-response.json
@@ -449,7 +489,7 @@ output/git-diff-check.txt
 脱敏 machine evidence。不要求 `adapter.json`，因为 shared adapter 不属于
 本 case 的 merge verdict 链。
 
-## 13. Verdict
+## 14. Verdict
 
 ### PASS
 
@@ -459,9 +499,12 @@ output/git-diff-check.txt
 - lock `resolved_commit == FINAL_HEAD_SHA`；
 - fixture repo exact SHA 且 dirty=no；
 - `manual_patch=no`；
+- clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
 - generated Codex projection 保留全部三条 exact behavior markers（含
   exactly-3 delegated units 指令），丢任一条即 `FAIL_PRODUCER`；
 - `/eval` execution healthy，version 有 provenance；
+- canonical input 为 `$RUN_ROOT/config/paper.txt`（producer repo 级 fixture
+  复制，不来自 consumer 安装树）；
 - root 恰有 1 个 formal direct outer child；
 - outer child 有恰好 `3` 个 distinct formal direct `spawnAgent` nested child；
 - formal ownership 无冲突；
@@ -477,6 +520,8 @@ contradiction 均不改变上述 topology verdict。**
 
 - `/eval` healthy；
 - 固定 input 正常；
+- clean-consumer purity preflight 已通过（consumer 无 test-only artifact
+  污染）；
 - root 恰有唯一 formal outer child；
 - formal topology evidence 本身有效；
 
@@ -498,6 +543,8 @@ contradiction 均不改变上述 topology verdict。**
 - root 出现多个不同 formal direct children，固定 outer dispatch 无法唯一
   归属；
 - clean consumer/provenance 不成立；
+- clean-consumer purity preflight 失败：安装树存在 test-only artifacts
+  （NOT TESTED）；
 - runtime 明确报告 permission/depth/concurrency/subagent capability
   blocker；
 - 当前 runtime/eval evidence surface 不再提供本 Recipe 所需 formal
@@ -518,13 +565,17 @@ BLOCKED。**
 
 **identity contradiction 不属于本 case 的 `INVALID_EVIDENCE` 条件。**
 
-## 14. Retry / invalidation
+## 15. Retry / invalidation
 
 - 每个 final SHA 的正式 acceptance 只产生一个 verdict；
 - `FAIL_PRODUCER` 一旦成立即终止该 SHA 的 acceptance，不得用同一 SHA
   后续无变更重跑得到的 `PASS` 覆盖；
 - 只有 `BLOCKED`（例如 provider / harness transient）允许在同一
   input、prompt、model、reasoning、sandbox、config 下做有界 retry；
+- test setup contamination（purity preflight 失败或安装树被 test-only
+  artifacts 污染）按 `BLOCKED / NOT TESTED` 处理：此时观察到的任何
+  topology 结果（包括 `nested=0`）不得作为 `FAIL_PRODUCER` 结论，修复测试
+  布局后以新 final SHA 重建 consumer 重跑；
 - 若要从 `FAIL_PRODUCER` 重新获得正式 `PASS`，必须先修复 producer、生成并
   push 新的 final SHA，再按本文重建 clean consumer 并运行一次正式 acceptance；
 - `INVALID_EVIDENCE` 不得通过 retry-until-green 覆盖，必须先修复损坏或矛盾的

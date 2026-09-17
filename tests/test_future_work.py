@@ -10,7 +10,7 @@ from pathlib import Path
 import pymupdf
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).resolve().parents[1] / ".apm/skills/paper-analysis"
 SCRIPT = ROOT / "scripts/future_work.py"
 SPEC = importlib.util.spec_from_file_location("future_work", SCRIPT)
 future_work = importlib.util.module_from_spec(SPEC)

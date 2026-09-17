@@ -280,6 +280,24 @@ spawn outer、outer 零 spawn 尝试"与"depth-1 child 根本没有 nested spawn
 工具面"两种解释相容；未完成本 characterization 前，正式 business prompt
 观察到的 `outer nested != 3` 不得唯一归因 producer instruction。
 
+**调用面事实（corrected design 的依据）**：本 runtime 调用原生 V1
+multi-agent 工具的已观察入口是 Code Mode programmatic tool calling——
+`custom_tool_call: exec` 内执行
+`await tools.multi_agent_v1__spawn_agent(...)`（root 先以 `ALL_TOOLS`
+发现工具名，再经 `exec` 调用；formal `collabAgentToolCall/spawnAgent`
+随后出现）。因此 probe prompt 一旦禁止 `exec`，就同时禁掉了被测
+capability 的实际调用入口，child 的 `nested=0` 无法区分：
+
+1. child 根本没有 `multi_agent_v1__spawn_agent`；
+2. child 有该 tool，但被 test prompt 禁止通过 Code Mode `exec` 调用；
+3. model 没有主动发现/调用它。
+
+历史教训：producer SHA `68bb65d` 的首轮 Probe A/B prompt 含
+"不得用 shell、curl、exec…"，属 `BLOCKED /
+INVALID_CHARACTERIZATION_DESIGN / NOT ATTRIBUTABLE`（§19）；本轮起改用
+§9 corrected prompt 重跑。characterization 不能靠一个会抑制被测
+capability 的 prompt 得出 capability absence 结论。
+
 - Case ID: `PA-CODEX-NESTED-CAP-00`；
 - Acceptance / characterization target：在与正式 smoke 相同的 Codex profile
   下，确认 root 创建的 depth-1 child 能否继续产生 formal depth-2
@@ -296,31 +314,46 @@ spawn outer、outer 零 spawn 尝试"与"depth-1 child 根本没有 nested spawn
   consumer、purity preflight（§6）、generated projection（§7）、fixture
   SHA、既有 eval service；
 - Probe 必须在正式 `paper-analysis` business prompt（§13/§14）之前运行；
-  A、B 各只运行一次，是 characterization A/B，不允许 retry-until-green。
+  corrected Probe A′、B′ 各只运行一次，是 characterization A/B，不允许
+  retry-until-green。
 
-## 9. 固定 capability probe prompt
+## 9. 固定 capability probe prompt（corrected design）
+
+root 仍只创建 exactly one direct child；child 固定任务为下述原文。**不得
+再写入"不得使用 exec"**：Code Mode `custom_tool_call: exec` 是本 runtime
+调用 `tools.multi_agent_v1__spawn_agent(...)` 的 programmatic tool-calling
+surface，不等同于 shell command；禁止它就是抑制被测 capability（§8）。
 
 ```bash
 cat >"$RUN_ROOT/config/nested-capability-prompt.txt" <<'EOF'
-这是一个最小 nested-subagent capability characterization；不要执行 paper-analysis，也不要读取或分析论文。
+这是 nested-subagent capability characterization，不读取项目业务文件，不做业务分析。
 
-你作为 root 只做以下动作：
-1. 使用当前运行时原生 subagent delegation 创建 exactly one direct child。
-2. 给该 direct child 的任务是：
-   - 不读取项目文件，不做业务分析；
-   - 立即使用它当前可用的原生 subagent delegation 创建 exactly one child；
-   - grandchild 只返回 `GRANDCHILD_OK`；
-   - direct child 等待 grandchild 后只返回 `CHILD_DONE`。
-3. 等待 direct child 返回后结束。
+你作为 root 只创建 exactly one direct child，并把下面"direct child 任务"整段原文交给该 child，等待它完成后结束；root 不得自己创建 grandchild。
 
-root 不得自己创建 grandchild；root/direct child 都不得用 shell、curl、exec、文件写入或另起 `/eval` 来模拟 delegation。若 direct child 当前没有 native nested delegation capability，则不要寻找替代路径，直接结束。
+--- direct child 任务（原文传达，不要改写）---
+这是 nested-subagent capability characterization，不读取项目业务文件，不做业务分析。
+
+你必须尝试使用当前 runtime 提供的原生 subagent delegation 创建 exactly one child。
+允许使用 Code Mode / programmatic tool calling 来发现并调用 runtime 已暴露的 native multi-agent tool；这不属于 shell fallback。
+
+禁止：
+- shell command / terminal command；
+- curl / HTTP；
+- 文件写入；
+- 另起 /eval；
+- 用文本声称 GRANDCHILD_OK 来冒充 delegation。
+
+grandchild 只返回 GRANDCHILD_OK。
+创建后等待它完成，然后 direct child 只返回 CHILD_DONE。
+若 runtime 确实未向该 child 暴露 nested multi-agent tool，则直接结束，不走替代路径。
+--- direct child 任务结束 ---
 EOF
 ```
 
 这是 characterization prompt，允许明确要求 nested spawn；它**绝不复用**为
 正式 `PA-CODEX-FULL-LEAF-01` prompt。
 
-## 10. Probe A — 当前默认配置
+## 10. Probe A′ — 当前默认配置
 
 与正式 acceptance 完全相同的 runtime profile（`--json --ephemeral
 --skip-git-repo-check --sandbox workspace-write --cd $CONSUMER --model
@@ -373,9 +406,11 @@ python3 "$PRODUCER_REPO/tests/runtime/verify_codex_nested_capability_probe.py" \
   --output "$RUN_ROOT/output/capability-default-topology.json"
 ```
 
-## 11. Probe B — 唯一变化 `agents.max_depth=2`
+## 11. Probe B′ — 唯一变化 `agents.max_depth=2`
 
-完全复用 Probe A 的 model / reasoning / sandbox / cwd / trust / prompt；
+仅在 Probe A′ 结果为 `NO_NESTED` 时运行（A′=NESTED_OK 时不得运行 B′，
+直接按 §12 分支进入正式 acceptance）。完全复用 Probe A′ 的 model /
+reasoning / sandbox / cwd / trust / prompt；
 **唯一允许变化**是 args 列表在 trust config 之后新增一项
 `"--config", "agents.max_depth=2"`；同样只运行一次：
 
@@ -436,49 +471,59 @@ evidence；不从模型自述、prompt 文本或 identity 推导 capability）�
 - malformed formal evidence → `INVALID_EVIDENCE`；
 - root formal direct child `!= 1` → `BLOCKED`（probe 没进入目标 path）；
 - root 恰 1 child 且该 child `>=1` direct formal `spawnAgent` grandchild →
-  `NESTED_CONFIRMED`；
+  `NESTED_OK`；
 - root 恰 1 child 且该 child `0` grandchild → `NO_NESTED`；
 - started/completed 同一 formal edge 去重；child 文本说"没有工具"不作为
-  verdict。
+  verdict；
+- `tool_surface_diagnostics`（child/root 线程的 `custom_tool_call` 计数、
+  tool 名与是否查询过 `ALL_TOOLS`）只作 characterization 诊断，**永不改变
+  status，也不作为 identity gate**。
 
 verdict 输出字段：
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "case_id": "PA-CODEX-NESTED-CAP-00",
-  "status": "NESTED_CONFIRMED | NO_NESTED | BLOCKED | INVALID_EVIDENCE",
+  "status": "NESTED_OK | NO_NESTED | BLOCKED | INVALID_EVIDENCE",
   "root_thread_id": "...",
   "root_direct_child_count": 1,
   "depth1_thread_id": "...",
   "depth2_direct_child_count": 0,
   "depth2_child_thread_ids": [],
   "formal_spawn_relation_count": 1,
+  "tool_surface_diagnostics": {},
   "reasons": [],
   "provenance": {"eval_version": "...", "contract_id": "..."}
 }
 ```
 
-verifier 退出码：`0` NESTED_CONFIRMED、`1` NO_NESTED、`2` BLOCKED、
+verifier 退出码：`0` NESTED_OK、`1` NO_NESTED、`2` BLOCKED、
 `3` INVALID_EVIDENCE。
 
 分支（`depth_hypothesis`）：
 
-| Probe A | Probe B | depth_hypothesis | 动作 |
+| Probe A′ | Probe B′ | depth_hypothesis | 动作 |
 | --- | --- | --- | --- |
-| `NESTED_CONFIRMED` | 不运行 | `REFUTED_BY_DEFAULT` | 停止：默认配置本身已有 depth-2 capability，depth hypothesis 不成立；不改 production agent；不继续新的正式 acceptance；把 `capability-default-eval-response.json` + `capability-default-topology.json` 的最小脱敏证据贴回 PR，等 reviewer 重新分析为什么 `paper-analysis` 有 tool capability 仍 inline |
-| `NO_NESTED` | `NESTED_CONFIRMED` | `CONFIRMED_BY_A_B` | 写 `output/nested-capability-decision.txt`（见下），**不停下来等人工 review**，直接继续 §13-§15 的正式 acceptance |
-| `NO_NESTED` | `NO_NESTED` | `NOT_CONFIRMED` | 停止：把 A+B 原始/解析证据贴 PR，等 reviewer 再分析；不继续堆 production prompt |
-| `BLOCKED` / `INVALID_EVIDENCE` | 停止，B 不运行 | `UNDETERMINED` | 停止：贴证据；不得拿它推断 producer |
+| `NESTED_OK` | 不运行 | `REFUTED_BY_DEFAULT` | **不停**：默认 runtime 已能 nested，depth 假设直接否定；直接进入 §13-§15 正式 acceptance，保持默认 Luna low、**不加** depth override；若正式 outer 仍 `nested != 3`，在 capability 已证明可用的前提下归 `FAIL_PRODUCER` |
+| `NO_NESTED` | `NESTED_OK` | `CONFIRMED_BY_A_B` | 写 `output/nested-capability-decision.txt`（见下），**不停下来等人工 review**，直接继续 §13-§15 的正式 acceptance，正式 eval request 固定加 `agents.max_depth=2` |
+| `NO_NESTED` | `NO_NESTED` | `NOT_CONFIRMED` | 停止：不跑 business acceptance；把 A′/B′ raw response + topology + child 工具面诊断贴 PR，等 reviewer 决定下一层 runtime/tool-surface 诊断；不提前换模型找 PASS |
+| `BLOCKED` / `INVALID_EVIDENCE` | 停止，B′ 不运行 | `UNDETERMINED` | 停止：贴证据；不得拿它推断 producer |
 
 `CONFIRMED_BY_A_B` 分支写入：
 
 ```text
 output/nested-capability-decision.txt
   baseline=NO_NESTED
-  agents.max_depth=2=NESTED_CONFIRMED
+  agents.max_depth=2=NESTED_OK
   acceptance_depth_override=agents.max_depth=2
 ```
+
+额外诊断义务（所有分支）：完整 raw response 本身已包含 child turn 的全部
+raw `custom_tool_call` / `custom_tool_call_output` 与 formal collab
+events，原样保留；若 child 通过 Code Mode 查询 `ALL_TOOLS`，该 raw output
+完整保留在本地 run root。"child 是否存在该 tool"只作 characterization
+诊断，不作为 identity gate。
 
 ## 13. Fixed input / prompt
 
@@ -511,10 +556,15 @@ EOF
 
 ## 14. Execution — existing eval service only
 
-仅当 §12 分支结果为 `depth_hypothesis=CONFIRMED_BY_A_B` 时才执行本章；
-正式 eval request 在原 profile 之上固定加入已经由 A/B 证明为必要 runtime
-prerequisite 的 `--config agents.max_depth=2`（这不是"同 SHA FAIL 后改
-config 重跑到绿"：正式 acceptance 在 capability probe 完成之前尚未开始）。
+仅当 §12 分支结果为 `depth_hypothesis=CONFIRMED_BY_A_B` 或
+`REFUTED_BY_DEFAULT` 时才执行本章（两种分支都是 characterization 已完成、
+capability 已证实可用）；`NOT_CONFIRMED` / `UNDETERMINED` 不得进入本章。
+
+正式 eval request 在原 profile 之上，仅当 `CONFIRMED_BY_A_B` 时固定加入
+已经由 A′/B′ 证明为必要 runtime prerequisite 的
+`--config agents.max_depth=2`；`REFUTED_BY_DEFAULT` 分支不加该 config
+（这不是"同 SHA FAIL 后改 config 重跑到绿"：正式 acceptance 在
+capability probe 完成之前尚未开始）。
 
 从既有 eval-server checkout 读取端口，不管理服务生命周期：
 
@@ -544,12 +594,13 @@ args = [
     # by adapter@9 (raw_identity_path.characterization_basis); an inline
     # projects={...} map is rejected by the pinned runtime at thread/start.
     "--config", f'projects."{consumer}".trust_level="trusted"',
-    # Runtime prerequisite characterized by PA-CODEX-NESTED-CAP-00 Probe A/B
-    # (depth_hypothesis=CONFIRMED_BY_A_B): the V1 default agents.max_depth=1
-    # does not expose the nested spawn tool surface to depth-1 children.
-    "--config", "agents.max_depth=2",
     "--", prompt,
 ]
+# depth_hypothesis=CONFIRMED_BY_A_B 时在 trust config 之后、"--" 之前插入：
+#   "--config", "agents.max_depth=2",
+# （V1 default agents.max_depth=1 已被 Probe A'/B' 证明对 depth-1 child
+# 不暴露 nested spawn 工具面；该 override 只能以 CONFIRMED_BY_A_B 为凭据
+# 加入，REFUTED_BY_DEFAULT 分支不得添加。）
 request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 900}
 # timeout: caller-side wall-clock budget for one full nested run
 # (root -> outer child -> nested leaves -> assembly). 300s proved too small
@@ -701,7 +752,7 @@ output/generated-projection.json
 output/capability-default-eval-request.json
 output/capability-default-eval-response.json
 output/capability-default-topology.json
-# 仅 Probe A = NO_NESTED 后运行 Probe B 时保留以下 capability-depth2-*：
+# 仅 Probe A′ = NO_NESTED 后运行 Probe B′ 时保留以下 capability-depth2-*：
 output/capability-depth2-eval-request.json
 output/capability-depth2-eval-response.json
 output/capability-depth2-topology.json
@@ -719,7 +770,10 @@ output/git-diff-check.txt
 
 完整 raw response 保留在本次 `/tmp` run root；PR 只贴足以证明结论的最小
 脱敏 machine evidence。不要求 `adapter.json`，因为 shared adapter 不属于
-本 case 的 merge verdict 链。
+本 case 的 merge verdict 链。corrected probe 的 child turn 中全部 raw
+`custom_tool_call` / `custom_tool_call_output` 与 formal collab events 随
+完整 raw response 原样保留；child 是否通过 Code Mode 查询过 `ALL_TOOLS`
+这类 tool 存在性信息仅作 characterization 诊断，不作为 identity gate。
 
 ## 19. Verdict
 
@@ -734,9 +788,10 @@ output/git-diff-check.txt
 - clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
 - generated Codex projection 保留全部三条 exact behavior markers（含
   exactly-3 delegated units 指令），丢任一条即 `FAIL_PRODUCER`；
-- PA-CODEX-NESTED-CAP-00 已完成且 `depth_hypothesis=CONFIRMED_BY_A_B`，
-  `output/nested-capability-decision.txt` 在案；正式 eval request 含
-  `--config agents.max_depth=2`；
+- PA-CODEX-NESTED-CAP-00 已完成且 `depth_hypothesis` 为
+  `CONFIRMED_BY_A_B`（正式 eval request 含 `--config agents.max_depth=2`，
+  `output/nested-capability-decision.txt` 在案）或 `REFUTED_BY_DEFAULT`
+  （Probe A′=NESTED_OK，正式 eval request 不含 depth override）；
 - `/eval` execution healthy，version 有 provenance；
 - canonical input 为 `$RUN_ROOT/config/paper.txt`（producer repo 级 fixture
   复制，不来自 consumer 安装树）；
@@ -746,15 +801,25 @@ output/git-diff-check.txt
 - producer deterministic suite 全 PASS；
 - OpenCode native deterministic/static contract 无回归。
 
-PR evidence 必须明确写：
+PR evidence 必须写明本 acceptance 的 characterization 前提，二选一：
+
+`depth_hypothesis=CONFIRMED_BY_A_B` 时：
 
 ```text
 Codex V1 runtime prerequisite characterized for this acceptance:
 agents.max_depth=2
 ```
 
-并且不得声称"默认 depth 配置也通过"。如果确认这是实际工作流所需的 Codex
-prerequisite，只在 `paper-analysis` repo 范围内把它记录进本 runtime
+并且不得声称"默认 depth 配置也通过"。
+
+`depth_hypothesis=REFUTED_BY_DEFAULT` 时：
+
+```text
+Codex V1 nested capability characterized for this acceptance:
+default depth sufficient (Probe A' NESTED_OK); no agents.max_depth override
+```
+
+两种情形都只在 `paper-analysis` repo 范围内把它记录进本 runtime
 Recipe / repo-local compatibility documentation；不为此修改
 professor-contact、fixtures、eval-server，也不修改 production agent
 wording。
@@ -766,9 +831,13 @@ contradiction 均不改变上述 topology verdict。**
 
 只有在：
 
-- PA-CODEX-NESTED-CAP-00 已完成且 `depth_hypothesis=CONFIRMED_BY_A_B`
-  （正式 acceptance 在 capability probe 完成之前尚未开始，未 probe 的
-  run 无资格产生本 verdict）；
+- PA-CODEX-NESTED-CAP-00 已完成且 `depth_hypothesis` 为
+  `CONFIRMED_BY_A_B`（Probe A′=NO_NESTED、Probe B′=NESTED_OK，正式 eval
+  request 含 `agents.max_depth=2`）或 `REFUTED_BY_DEFAULT`（Probe A′=
+  NESTED_OK，正式 eval request 不加 depth override）：两种情形下 nested
+  capability 均已被 corrected probe 以未受抑制的调用面证实可用，正式
+  acceptance 在 capability probe 完成之前尚未开始，未 probe 的 run 无资格
+  产生本 verdict；
 - `/eval` healthy；
 - 固定 input 正常；
 - clean-consumer purity preflight 已通过（consumer 无 test-only artifact
@@ -807,7 +876,23 @@ contradiction 均不改变上述 topology verdict。**
   它仍是有价值的历史观察，但在未确认 depth-1 child 是否拿到 nested
   delegation surface 的 runtime 下，不能直接证明 producer instruction
   违反 contract，因此不得作为 `FAIL_PRODUCER` 结论；
-- probe A/B 任一为 `BLOCKED` / `INVALID_EVIDENCE`，或
+- **`BLOCKED / INVALID_CHARACTERIZATION_DESIGN / NOT ATTRIBUTABLE`**：
+  characterization 自身的 probe prompt 抑制了 runtime 已观察到的 native
+  调用面（Code Mode `custom_tool_call: exec` 调用
+  `tools.multi_agent_v1__spawn_agent(...)`），其 A/B 结果不能区分"child
+  没有 nested 工具面"与"被 prompt 禁止调用入口"，不得得出任何
+  `depth_hypothesis` 结论。记录格式：
+
+  ```text
+  INVALID_CHARACTERIZATION_DESIGN / NOT ATTRIBUTABLE
+  reason: probe prompt prohibited the observed native Code Mode invocation
+  surface (`exec`) used to call multi_agent_v1__spawn_agent
+  ```
+
+  历史 case：producer SHA `68bb65ddbb58990198bcac874663667e642e45a2` 的
+  首轮 Probe A/B（run root 见该 SHA 的 PR evidence）即属此类，
+  已从 `depth_hypothesis=NOT_CONFIRMED` 重分类；
+- probe A′/B′ 任一为 `BLOCKED` / `INVALID_EVIDENCE`，或
   `depth_hypothesis=NOT_CONFIRMED`（停止并贴证据，不归因 producer）；
 - runtime 明确报告 permission/depth/concurrency/subagent capability
   blocker；
@@ -831,10 +916,16 @@ BLOCKED。**
 
 ## 20. Retry / invalidation
 
-- 正式 acceptance 的入口顺序固定为：完成 PA-CODEX-NESTED-CAP-00 Probe
-  A/B 并得到 `depth_hypothesis` 之后，才允许产生至多一次正式 business
-  verdict；A、B 各只运行一次，是 characterization A/B，不允许
+- 正式 acceptance 的入口顺序固定为：完成 PA-CODEX-NESTED-CAP-00 corrected
+  Probe A′/B′ 并得到 `depth_hypothesis` 之后，才允许产生至多一次正式
+  business verdict；A′、B′ 各只运行一次，是 characterization A/B，不允许
   retry-until-green；
+- **probe 设计约束**：corrected probe prompt 不得禁止 runtime 已观察到的
+  native 调用面（Code Mode `custom_tool_call: exec` 调用
+  `tools.multi_agent_v1__spawn_agent(...)`）；违反该约束的
+  characterization 按 §19 `BLOCKED /
+  INVALID_CHARACTERIZATION_DESIGN / NOT ATTRIBUTABLE` 记录，必须先修
+  Recipe 再以 corrected prompt 重跑 A′/B′，不得沿用其结论；
 - 每个 final SHA 的正式 acceptance 只产生一个 verdict；
 - `FAIL_PRODUCER` 一旦成立即终止该 SHA 的 acceptance，不得用同一 SHA
   后续无变更重跑得到的 `PASS` 覆盖；
@@ -846,10 +937,11 @@ BLOCKED。**
   布局后以新 final SHA 重建 consumer 重跑；
 - capability characterization 未完成时取得的任何正式 topology 观察按
   `BLOCKED / NOT YET ATTRIBUTABLE` 记录，不得作为 `FAIL_PRODUCER` 结论；
-  完成 Probe A/B 后按 §12 分支继续或停止；
-- `agents.max_depth=2` 只能作为 Probe A/B 已确认的 runtime prerequisite
-  进入正式 eval request；除此之外不换模型、不提高 reasoning、不改
-  prompt、不放宽 sandbox、不手动告诉 outer child spawn；
+  完成 corrected Probe A′/B′ 后按 §12 分支继续或停止；
+- `agents.max_depth=2` 只能作为 Probe A′/B′ 以 `CONFIRMED_BY_A_B` 确认的
+  runtime prerequisite 进入正式 eval request；`REFUTED_BY_DEFAULT` 分支
+  （A′=NESTED_OK）不得添加该 override；除此之外不换模型、不提高
+  reasoning、不改 prompt、不放宽 sandbox、不手动告诉 outer child spawn；
 - 若要从 `FAIL_PRODUCER` 重新获得正式 `PASS`，必须先修复 producer、生成并
   push 新的 final SHA，再按本文重建 clean consumer 并运行一次正式 acceptance；
 - `INVALID_EVIDENCE` 不得通过 retry-until-green 覆盖，必须先修复损坏或矛盾的

@@ -7,7 +7,7 @@ from verify_codex_nested_capability_probe import (
     CASE_ID,
     STATUS_BLOCKED,
     STATUS_INVALID_EVIDENCE,
-    STATUS_NESTED_CONFIRMED,
+    STATUS_NESTED_OK,
     STATUS_NO_NESTED,
     verify_probe,
 )
@@ -76,10 +76,21 @@ def eval_response(events: list[dict] | None = None) -> dict:
     }
 
 
-# --- NESTED_CONFIRMED ----------------------------------------------------------
+def custom_tool_call(thread: str, name: str, action: str) -> dict:
+    """Code Mode programmatic tool-calling item (the runtime's native
+    multi-agent invocation surface); diagnostics only, never formal."""
+
+    return event(
+        "rawResponseItem/completed",
+        {"type": "custom_tool_call", "name": name, "status": "completed", "action": action},
+        thread_id=thread,
+    )
 
 
-def test_nested_confirmed_root_one_child_with_grandchild() -> None:
+# --- NESTED_OK -----------------------------------------------------------------
+
+
+def test_nested_ok_root_one_child_with_grandchild() -> None:
     events = [
         spawn(ROOT_THREAD, [], method="item/started"),
         spawn(ROOT_THREAD, [DEPTH1_THREAD]),
@@ -87,7 +98,8 @@ def test_nested_confirmed_root_one_child_with_grandchild() -> None:
         spawn(DEPTH1_THREAD, [DEPTH2_THREAD]),
     ]
     verdict = verify_probe(eval_response(events), contract())
-    assert verdict["status"] == STATUS_NESTED_CONFIRMED
+    assert verdict["status"] == STATUS_NESTED_OK
+    assert verdict["schema"] == 2
     assert verdict["case_id"] == CASE_ID
     assert verdict["root_thread_id"] == ROOT_THREAD
     assert verdict["root_direct_child_count"] == 1
@@ -102,7 +114,7 @@ def test_nested_confirmed_root_one_child_with_grandchild() -> None:
     }
 
 
-def test_nested_confirmed_any_positive_grandchild_count() -> None:
+def test_nested_ok_any_positive_grandchild_count() -> None:
     # Characterization asks "can the depth-1 child spawn at all"; more than
     # one grandchild still confirms the capability surface.
     events = [
@@ -110,7 +122,7 @@ def test_nested_confirmed_any_positive_grandchild_count() -> None:
         spawn(DEPTH1_THREAD, [DEPTH2_THREAD, OTHER_THREAD]),
     ]
     verdict = verify_probe(eval_response(events), contract())
-    assert verdict["status"] == STATUS_NESTED_CONFIRMED
+    assert verdict["status"] == STATUS_NESTED_OK
     assert verdict["depth2_child_thread_ids"] == [DEPTH2_THREAD, OTHER_THREAD]
 
 
@@ -206,6 +218,49 @@ def test_invalid_evidence_malformed_relation_shape() -> None:
 # --- dedup / identity indifference ----------------------------------------------
 
 
+# --- tool-surface diagnostics (characterization only) ---------------------------
+
+
+def test_child_code_mode_surface_is_diagnostic_not_gate() -> None:
+    # The corrected probe lets the child use the runtime's observed native
+    # invocation surface (Code Mode exec calling multi_agent_v1 tools).
+    # Whether the child issued such calls is reported as diagnostics and
+    # must never flip the formal status either way.
+    events = [
+        spawn(ROOT_THREAD, [DEPTH1_THREAD]),
+        custom_tool_call(
+            DEPTH1_THREAD,
+            "exec",
+            'const hits = ALL_TOOLS.filter(x => /multi_agent/i.test(x.name));\ntext(hits);\n',
+        ),
+    ]
+    verdict = verify_probe(eval_response(events), contract())
+    assert verdict["status"] == STATUS_NO_NESTED
+    child = verdict["tool_surface_diagnostics"][DEPTH1_THREAD]
+    assert child["custom_tool_call_count"] == 1
+    assert child["custom_tool_names"] == ["exec"]
+    assert child["queried_all_tools"] is True
+
+
+def test_diagnostics_reported_on_nested_ok() -> None:
+    events = [
+        spawn(ROOT_THREAD, [DEPTH1_THREAD]),
+        spawn(DEPTH1_THREAD, [DEPTH2_THREAD]),
+        custom_tool_call(
+            ROOT_THREAD,
+            "exec",
+            'await tools.multi_agent_v1__spawn_agent({message:"child"});\n',
+        ),
+    ]
+    verdict = verify_probe(eval_response(events), contract())
+    assert verdict["status"] == STATUS_NESTED_OK
+    root = verdict["tool_surface_diagnostics"][ROOT_THREAD]
+    assert root["custom_tool_call_count"] == 1
+    assert root["custom_tool_names"] == ["exec"]
+    assert root["queried_all_tools"] is False
+    assert DEPTH1_THREAD not in verdict["tool_surface_diagnostics"]
+
+
 def test_started_and_completed_of_same_edge_deduplicate() -> None:
     events = [
         spawn(ROOT_THREAD, [], method="item/started"),
@@ -215,7 +270,7 @@ def test_started_and_completed_of_same_edge_deduplicate() -> None:
         spawn(DEPTH1_THREAD, [DEPTH2_THREAD]),
     ]
     verdict = verify_probe(eval_response(events), contract())
-    assert verdict["status"] == STATUS_NESTED_CONFIRMED
+    assert verdict["status"] == STATUS_NESTED_OK
     assert verdict["formal_spawn_relation_count"] == 2
 
 
@@ -294,7 +349,7 @@ def test_cli_end_to_end_exit_codes(tmp_path: pathlib.Path) -> None:
     )
     assert confirmed.returncode == 0, confirmed.stderr
     assert json.loads(confirmed_out.read_text(encoding="utf-8"))["status"] == (
-        STATUS_NESTED_CONFIRMED
+        STATUS_NESTED_OK
     )
 
     no_nested_response = tmp_path / "no-nested-response.json"

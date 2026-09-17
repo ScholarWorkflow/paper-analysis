@@ -345,6 +345,34 @@ def test_invalid_malformed_event_shapes() -> None:
     assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, "events not a list"
 
 
+def test_invalid_malformed_dispatch_envelopes_fail_closed() -> None:
+    """Recognized dispatch methods must carry an object at the contract item path."""
+
+    for method in ("item/started", "item/completed"):
+        cases = {
+            "params missing": {"message": {"method": method}},
+            "params non-object": {
+                "message": {"method": method, "params": "not-an-object"}
+            },
+            "item missing": {"message": {"method": method, "params": {}}},
+            "item null": {
+                "message": {"method": method, "params": {"item": None}}
+            },
+            "item non-object": {
+                "message": {"method": method, "params": {"item": []}}
+            },
+        }
+        for label, malformed in cases.items():
+            response = eval_response(
+                [spawn(ROOT_THREAD, [OUTER_THREAD]), malformed]
+            )
+            verdict = verify_topology(response, contract())
+            assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, (
+                method,
+                label,
+            )
+
+
 def test_invalid_common_gate_shapes() -> None:
     base = eval_response(healthy_events())
     cases = {

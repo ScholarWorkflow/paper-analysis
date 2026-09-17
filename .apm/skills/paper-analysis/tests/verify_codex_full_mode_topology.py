@@ -207,7 +207,17 @@ def _formal_edges(
         if method not in rules["methods"]:
             continue
         item, found = _lookup(event, rules["item_source"])
-        if not found or not isinstance(item, dict):
+        if not found:
+            problems.append(
+                f"app_server_events[{index}]: dispatch method {method!r} "
+                f"is missing the contract item source {rules['item_source']!r}"
+            )
+            continue
+        if not isinstance(item, dict):
+            problems.append(
+                f"app_server_events[{index}]: dispatch method {method!r} "
+                "has a non-object contract item"
+            )
             continue
         if item.get("type") != FORMAL_ITEM_TYPE:
             continue

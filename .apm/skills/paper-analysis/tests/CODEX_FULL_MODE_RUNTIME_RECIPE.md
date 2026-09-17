@@ -254,7 +254,10 @@ args = [
     "--cd", consumer,
     "--model", "gpt-5.6-luna",
     "--config", 'model_reasoning_effort="low"',
-    "--config", f'projects={{"{consumer}"={{"trust_level":"trusted"}}}}',
+    # Project trust must use the dotted per-run override surface documented
+    # by adapter@9 (raw_identity_path.characterization_basis); an inline
+    # projects={...} map is rejected by the pinned runtime at thread/start.
+    "--config", f'projects."{consumer}".trust_level="trusted"',
     "--", prompt,
 ]
 request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 300}

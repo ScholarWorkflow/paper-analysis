@@ -2,430 +2,439 @@
 
 The static JSON built here is a producer verifier test fixture only; it is
 not the shared runtime fixture protocol. The verifier consumes the raw /eval
-response plus the shared adapter output, so these fixtures mirror the pinned
-adapter@9 output surface (fixture_status, delegation, dispatch,
-child_thread_reads).
+response plus the pinned codex-eval-adapter@9 contract, so these fixtures
+mirror the contract's formal spawnAgent relation surface. Identity fields
+may appear in the raw evidence; the verdict must never depend on them.
 """
 
+from __future__ import annotations
+
 import json
+import pathlib
 import subprocess
 import sys
-import tempfile
-import unittest
-from pathlib import Path
 
-import verify_codex_full_mode_topology as verifier
+from verify_codex_full_mode_topology import (
+    CASE_ID,
+    PINNED_CONTRACT_ID,
+    STATUS_BLOCKED,
+    STATUS_FAIL_PRODUCER,
+    STATUS_INVALID_EVIDENCE,
+    STATUS_PASS,
+    verify_topology,
+)
 
-SCRIPT = Path(__file__).with_name("verify_codex_full_mode_topology.py")
-
-ROOT_THREAD = "thread-root-1"
-COORDINATOR_THREAD = "thread-coordinator-1"
-NESTED_LEAF_THREAD = "thread-leaf-1"
-SECOND_ROLE_THREAD = "thread-second-role-1"
-EXPECTED_AGENT = "paper-analysis"
+ROOT_THREAD = "11111111-1111-7111-1111-111111111111"
+OUTER_THREAD = "22222222-2222-7222-2222-222222222222"
+NESTED_A = "33333333-3333-7333-3333-333333333333"
+NESTED_B = "44444444-4444-7444-4444-444444444444"
+NESTED_C = "55555555-5555-7555-5555-555555555555"
 
 
-def spawn_relation(sender, receivers, parent, *, call_id="exec-1", runtime_seq=7):
+def contract() -> dict:
+    """Minimal mirror of the pinned codex-eval-adapter@9 contract surfaces."""
+
     return {
-        "receiver_thread_ids": list(receivers),
-        "call_id": call_id,
-        "status": "completed",
-        "parent_thread_id": parent,
-        "tool": "spawnAgent",
-        "sender_thread_id": sender,
-        "runtime_seq": runtime_seq,
+        "contract_id": PINNED_CONTRACT_ID,
+        "response_field_map": {
+            "codex_version": "version",
+            "thread_id": "output.thread_id",
+            "app_server_events": "output.app_server_events",
+        },
+        "dispatch_evidence_item_types": ["subAgentActivity", "collabAgentToolCall"],
+        "app_server_event_envelope": {
+            "dispatch_methods": ["item/started", "item/completed"],
+            "item_source": "message.params.item",
+        },
+        "raw_identity_path": {"formal_spawn_relation": {"tool": "spawnAgent"}},
+        "delegation": {"fail_closed": {}},
     }
 
 
-def read_entry(thread_id, parent_thread_id, *, effective_role, identity_eligible=True):
+def event(method: str, item: dict, thread_id: str | None = None) -> dict:
+    params: dict = {"item": item}
+    if thread_id is not None:
+        params["threadId"] = thread_id
     return {
-        "thread_id": thread_id,
-        "parent_thread_id": parent_thread_id,
-        "relation_kind": "collabAgentToolCall.receiverThreadIds",
-        "outcome": "success",
-        "identity_eligible": identity_eligible,
-        "effective_role": effective_role,
+        "runtime_seq": 1,
+        "direction": "recv",
+        "message": {"method": method, "params": params},
     }
 
 
-def healthy_eval_response():
+def spawn(
+    sender: str,
+    receivers: list[str] | None,
+    *,
+    method: str = "item/completed",
+    tool: str = "spawnAgent",
+    include_sender: bool = True,
+) -> dict:
+    item: dict = {"type": "collabAgentToolCall", "tool": tool, "status": "completed"}
+    if include_sender:
+        item["senderThreadId"] = sender
+    if receivers is not None:
+        item["receiverThreadIds"] = receivers
+    return event(method, item, thread_id=sender)
+
+
+def eval_response(events: list[dict] | None = None) -> dict:
     return {
         "passed": True,
-        "version": "codex-cli 0.153.4 (provenance only)",
+        "version": "codex-cli 0.154.0",
         "output": {
-            "backend": "codex",
-            "runtime_generation": "gen-1",
             "thread_id": ROOT_THREAD,
-            "turn_id": "turn-1",
-            "termination_reason": "end_turn",
+            "app_server_events": events if events is not None else [],
         },
     }
 
 
-def healthy_adapter():
-    return {
-        "schema": 1,
-        "role": "codex-eval-evidence",
-        "adapter": "skills-test-fixtures parse_codex_eval_evidence.py",
-        "adapter_contract_id": "skills-test-fixtures/codex-eval-adapter@9",
-        "fixture_status": "FIXTURE_READY",
-        "problems": [],
-        "delegation": {
-            "state": "confirmed",
-            "formal_child_count": 2,
-            "child_thread_ids": sorted([COORDINATOR_THREAD, NESTED_LEAF_THREAD]),
-            "basis": ["formal_spawn_relation"],
-            "reason_code": None,
-        },
-        "dispatch": {
-            "expected_agents": [EXPECTED_AGENT],
-            "thread_relations": [
-                spawn_relation(ROOT_THREAD, [COORDINATOR_THREAD], ROOT_THREAD),
-                spawn_relation(
-                    COORDINATOR_THREAD, [NESTED_LEAF_THREAD], COORDINATOR_THREAD
-                ),
-            ],
-        },
-        "child_thread_reads": {
-            "entry_count": 2,
-            "identity_eligible_thread_ids": sorted(
-                [COORDINATOR_THREAD, NESTED_LEAF_THREAD]
-            ),
-            "entries": [
-                read_entry(
-                    COORDINATOR_THREAD, ROOT_THREAD, effective_role=EXPECTED_AGENT
-                ),
-                read_entry(NESTED_LEAF_THREAD, COORDINATOR_THREAD, effective_role="general"),
-            ],
-        },
+def healthy_events() -> list[dict]:
+    return [
+        spawn(ROOT_THREAD, [], method="item/started"),
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [], method="item/started"),
+        spawn(OUTER_THREAD, [NESTED_A]),
+        spawn(OUTER_THREAD, [NESTED_B]),
+        spawn(OUTER_THREAD, [NESTED_C]),
+        spawn(OUTER_THREAD, [NESTED_A, NESTED_B], tool="wait"),
+    ]
+
+
+# --- PASS ---------------------------------------------------------------------
+
+
+def test_pass_unique_outer_child_with_nested_children() -> None:
+    verdict = verify_topology(eval_response(healthy_events()), contract())
+    assert verdict["producer_status"] == STATUS_PASS
+    assert verdict["case_id"] == CASE_ID
+    assert verdict["root_thread_id"] == ROOT_THREAD
+    assert verdict["root_direct_child_count"] == 1
+    assert verdict["outer_thread_id"] == OUTER_THREAD
+    assert verdict["nested_direct_child_count"] == 3
+    assert verdict["nested_child_thread_ids"] == [NESTED_A, NESTED_B, NESTED_C]
+    assert verdict["formal_spawn_relation_count"] == 4
+    assert verdict["reasons"] == []
+    assert verdict["provenance"] == {
+        "eval_version": "codex-cli 0.154.0",
+        "contract_id": PINNED_CONTRACT_ID,
     }
 
 
-class VerifyTopologyTests(unittest.TestCase):
-    def verify(self, eval_response, adapter, **kwargs):
-        return verifier.verify_topology(
-            eval_response, adapter, expected_agent=EXPECTED_AGENT, **kwargs
-        )
+def test_pass_minimal_single_nested_child() -> None:
+    events = [spawn(ROOT_THREAD, [OUTER_THREAD]), spawn(OUTER_THREAD, [NESTED_A])]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_PASS
+    assert verdict["formal_spawn_relation_count"] == 2
+    assert verdict["nested_child_thread_ids"] == [NESTED_A]
 
-    # ------------------------------------------------------------------
-    # PASS
-    # ------------------------------------------------------------------
 
-    def test_pass_exact_coordinator_has_direct_nested_child(self):
-        verdict = self.verify(healthy_eval_response(), healthy_adapter())
-        self.assertEqual(verdict["producer_status"], "PASS")
-        self.assertEqual(verdict["case_id"], "PA-CODEX-FULL-LEAF-01")
-        self.assertEqual(verdict["coordinator_thread_id"], COORDINATOR_THREAD)
-        self.assertIs(verdict["root_to_paper_analysis"], True)
-        self.assertEqual(verdict["paper_analysis_direct_child_count"], 1)
-        self.assertEqual(verdict["nested_child_thread_ids"], [NESTED_LEAF_THREAD])
-        self.assertEqual(verdict["reasons"], [])
-        self.assertEqual(verdict["provenance"]["eval_version"], "codex-cli 0.153.4 (provenance only)")
+def test_started_and_completed_of_same_edge_deduplicate() -> None:
+    events = [
+        spawn(ROOT_THREAD, [], method="item/started"),
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [], method="item/started"),
+        spawn(OUTER_THREAD, [NESTED_A]),
+        spawn(OUTER_THREAD, [NESTED_A]),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_PASS
+    assert verdict["formal_spawn_relation_count"] == 2
 
-    # ------------------------------------------------------------------
-    # FAIL_PRODUCER
-    # ------------------------------------------------------------------
 
-    def test_fail_producer_when_healthy_coordinator_spawns_no_nested_child(self):
-        adapter = healthy_adapter()
-        adapter["dispatch"]["thread_relations"] = [
-            spawn_relation(ROOT_THREAD, [COORDINATOR_THREAD], ROOT_THREAD)
-        ]
-        adapter["delegation"] = {
-            "state": "confirmed",
-            "formal_child_count": 1,
-            "child_thread_ids": [COORDINATOR_THREAD],
-            "basis": ["formal_spawn_relation"],
-            "reason_code": None,
-        }
-        adapter["child_thread_reads"] = {
-            "entry_count": 1,
-            "identity_eligible_thread_ids": [COORDINATOR_THREAD],
-            "entries": [
-                read_entry(
-                    COORDINATOR_THREAD, ROOT_THREAD, effective_role=EXPECTED_AGENT
-                )
-            ],
-        }
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "FAIL_PRODUCER")
-        self.assertEqual(verdict["coordinator_thread_id"], COORDINATOR_THREAD)
-        self.assertIs(verdict["root_to_paper_analysis"], True)
-        self.assertEqual(verdict["nested_child_thread_ids"], [])
-        self.assertEqual(verdict["paper_analysis_direct_child_count"], 0)
-        self.assertTrue(verdict["reasons"])
+def test_started_without_concrete_receivers_is_ignored() -> None:
+    events = [
+        spawn(ROOT_THREAD, [], method="item/started"),
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [NESTED_A]),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_PASS
 
-    def test_fail_producer_when_only_a_generic_sibling_spawns_children(self):
-        adapter = healthy_adapter()
-        generic = "thread-generic-1"
-        adapter["dispatch"]["thread_relations"] = [
-            spawn_relation(ROOT_THREAD, [COORDINATOR_THREAD], ROOT_THREAD),
-            spawn_relation(ROOT_THREAD, [generic], ROOT_THREAD, call_id="exec-2"),
-        ]
-        adapter["delegation"]["child_thread_ids"] = sorted(
-            [COORDINATOR_THREAD, generic]
-        )
-        adapter["delegation"]["formal_child_count"] = 2
-        reads = adapter["child_thread_reads"]
-        reads["entries"] = [
-            read_entry(
-                COORDINATOR_THREAD, ROOT_THREAD, effective_role=EXPECTED_AGENT
-            ),
-            read_entry(generic, ROOT_THREAD, effective_role=None),
-        ]
-        reads["entry_count"] = 2
-        reads["identity_eligible_thread_ids"] = sorted([COORDINATOR_THREAD, generic])
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "FAIL_PRODUCER")
-        self.assertEqual(verdict["coordinator_thread_id"], COORDINATOR_THREAD)
-        self.assertEqual(verdict["nested_child_thread_ids"], [])
 
-    # ------------------------------------------------------------------
-    # BLOCKED
-    # ------------------------------------------------------------------
+def test_non_spawn_collab_tools_never_contribute_formal_children() -> None:
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(ROOT_THREAD, [NESTED_A], tool="wait"),
+        spawn(ROOT_THREAD, [NESTED_B], tool="sendInput"),
+        spawn(OUTER_THREAD, [NESTED_A]),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_PASS
+    assert verdict["nested_child_thread_ids"] == [NESTED_A]
+    assert verdict["formal_spawn_relation_count"] == 2
 
-    def test_blocked_when_coordinator_persisted_role_not_machine_confirmable(self):
-        adapter = healthy_adapter()
-        adapter["child_thread_reads"]["entries"][0]["effective_role"] = None
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "BLOCKED")
 
-    def test_blocked_when_child_thread_reads_surface_absent(self):
-        adapter = healthy_adapter()
-        del adapter["child_thread_reads"]
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "BLOCKED")
+def test_identity_diagnostics_never_change_pass_verdict() -> None:
+    """The §4.1 identity-independence regression: the verdict stays PASS."""
 
-    def test_blocked_when_adapter_reports_blocked_dependency(self):
-        adapter = healthy_adapter()
-        adapter["fixture_status"] = "BLOCKED_DEPENDENCY"
-        adapter["problems"] = ["eval-server recorded no usable codex --version"]
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "BLOCKED")
-        self.assertIn("BLOCKED_DEPENDENCY", verdict["reasons"][0])
-
-    def test_blocked_when_eval_version_is_null(self):
-        eval_response = healthy_eval_response()
-        eval_response["version"] = None
-        verdict = self.verify(eval_response, healthy_adapter())
-        self.assertEqual(verdict["producer_status"], "BLOCKED")
-
-    def test_blocked_when_eval_harness_reports_failure(self):
-        eval_response = healthy_eval_response()
-        eval_response["passed"] = False
-        verdict = self.verify(eval_response, healthy_adapter())
-        self.assertEqual(verdict["producer_status"], "BLOCKED")
-
-    def test_blocked_when_adapter_reports_dispatch_mismatch(self):
-        adapter = healthy_adapter()
-        adapter["fixture_status"] = "HARNESS_DISPATCH_MISMATCH"
-        adapter["problems"] = ["expected_agent_role_mismatch"]
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "BLOCKED")
-
-    def test_blocked_when_role_thread_is_not_a_root_child(self):
-        adapter = healthy_adapter()
-        adapter["child_thread_reads"]["entries"][0]["parent_thread_id"] = (
-            "thread-unrelated"
-        )
-        adapter["dispatch"]["thread_relations"][0] = spawn_relation(
-            "thread-unrelated", [COORDINATOR_THREAD], "thread-unrelated"
-        )
-        adapter["delegation"]["child_thread_ids"] = sorted(
-            [COORDINATOR_THREAD, NESTED_LEAF_THREAD]
-        )
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "BLOCKED")
-        self.assertIs(verdict["root_to_paper_analysis"], False)
-        self.assertEqual(verdict["coordinator_thread_id"], COORDINATOR_THREAD)
-
-    # ------------------------------------------------------------------
-    # INVALID_EVIDENCE
-    # ------------------------------------------------------------------
-
-    def test_invalid_evidence_when_nested_child_parent_attribution_conflicts(self):
-        adapter = healthy_adapter()
-        adapter["child_thread_reads"]["entries"][1]["parent_thread_id"] = ROOT_THREAD
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "INVALID_EVIDENCE")
-
-    def test_invalid_evidence_when_coordinator_identity_is_ambiguous(self):
-        adapter = healthy_adapter()
-        adapter["dispatch"]["thread_relations"].append(
-            spawn_relation(ROOT_THREAD, [SECOND_ROLE_THREAD], ROOT_THREAD, call_id="exec-2")
-        )
-        adapter["delegation"]["child_thread_ids"] = sorted(
-            [COORDINATOR_THREAD, NESTED_LEAF_THREAD, SECOND_ROLE_THREAD]
-        )
-        adapter["delegation"]["formal_child_count"] = 3
-        adapter["child_thread_reads"]["entries"].append(
-            read_entry(
-                SECOND_ROLE_THREAD, ROOT_THREAD, effective_role=EXPECTED_AGENT
-            )
-        )
-        adapter["child_thread_reads"]["entry_count"] = 3
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "INVALID_EVIDENCE")
-
-    def test_invalid_evidence_when_adapter_reports_invalid_evidence(self):
-        adapter = healthy_adapter()
-        adapter["fixture_status"] = "INVALID_EVIDENCE"
-        adapter["problems"] = ["corrupted app-server dispatch evidence fails closed"]
-        verdict = self.verify(healthy_eval_response(), adapter)
-        self.assertEqual(verdict["producer_status"], "INVALID_EVIDENCE")
-
-    def test_invalid_evidence_on_malformed_shapes(self):
-        cases = []
-        cases.append(("eval response not an object", [], healthy_adapter()))
-        cases.append(("adapter not an object", healthy_eval_response(), []))
-
-        adapter = healthy_adapter()
-        adapter["schema"] = 2
-        cases.append(("adapter schema drift", healthy_eval_response(), adapter))
-
-        adapter = healthy_adapter()
-        adapter["adapter_contract_id"] = "skills-test-fixtures/codex-eval-adapter@8"
-        cases.append(("adapter contract drift", healthy_eval_response(), adapter))
-
-        adapter = healthy_adapter()
-        adapter["fixture_status"] = "SOMETHING_ELSE"
-        cases.append(("unknown fixture_status", healthy_eval_response(), adapter))
-
-        adapter = healthy_adapter()
-        adapter["problems"] = "not-a-list"
-        cases.append(("problems not a list", healthy_eval_response(), adapter))
-
-        adapter = healthy_adapter()
-        del adapter["dispatch"]
-        cases.append(("dispatch missing", healthy_eval_response(), adapter))
-
-        eval_response = healthy_eval_response()
-        del eval_response["output"]
-        cases.append(("output missing", eval_response, healthy_adapter()))
-
-        eval_response = healthy_eval_response()
-        eval_response["passed"] = "yes"
-        cases.append(("passed not a boolean", eval_response, healthy_adapter()))
-
-        eval_response = healthy_eval_response()
-        eval_response["version"] = 5
-        cases.append(("version not a string", eval_response, healthy_adapter()))
-
-        adapter = healthy_adapter()
-        adapter["dispatch"]["thread_relations"][1] = spawn_relation(
-            None, [NESTED_LEAF_THREAD], COORDINATOR_THREAD
-        )
-        cases.append(("spawn relation without sender", healthy_eval_response(), adapter))
-
-        adapter = healthy_adapter()
-        adapter["dispatch"]["thread_relations"][1] = spawn_relation(
-            COORDINATOR_THREAD, [], COORDINATOR_THREAD
-        )
-        cases.append(("spawn relation without receivers", healthy_eval_response(), adapter))
-
-        adapter = healthy_adapter()
-        del adapter["delegation"]
-        cases.append(("delegation missing", healthy_eval_response(), adapter))
-
-        adapter = healthy_adapter()
-        adapter["delegation"]["state"] = "unobservable"
-        cases.append(
-            ("delegation unobservable with nested children", healthy_eval_response(), adapter)
-        )
-
-        adapter = healthy_adapter()
-        adapter["delegation"]["child_thread_ids"] = ["thread-never-spawned"]
-        cases.append(
-            ("delegation children without formal ownership", healthy_eval_response(), adapter)
-        )
-
-        adapter = healthy_adapter()
-        adapter["dispatch"]["thread_relations"][1] = spawn_relation(
-            COORDINATOR_THREAD, [ROOT_THREAD], COORDINATOR_THREAD
-        )
-        cases.append(("root as spawn receiver", healthy_eval_response(), adapter))
-
-        for name, eval_response, broken_adapter in cases:
-            with self.subTest(case=name):
-                verdict = self.verify(eval_response, broken_adapter)
-                self.assertEqual(verdict["producer_status"], "INVALID_EVIDENCE", name)
-                self.assertTrue(verdict["reasons"], name)
-
-    # ------------------------------------------------------------------
-    # Contract id override + CLI
-    # ------------------------------------------------------------------
-
-    def test_expected_contract_id_override_is_honored(self):
-        adapter = healthy_adapter()
-        adapter["adapter_contract_id"] = "skills-test-fixtures/codex-eval-adapter@10"
-        verdict = self.verify(
-            healthy_eval_response(),
-            adapter,
-            expected_contract_id="skills-test-fixtures/codex-eval-adapter@10",
-        )
-        self.assertEqual(verdict["producer_status"], "PASS")
-
-    def test_cli_writes_verdict_and_exit_code(self):
-        for expected_status, expected_exit, adapter in (
-            ("PASS", 0, healthy_adapter()),
-            ("FAIL_PRODUCER", 1, self._fail_producer_adapter()),
+    events = healthy_events()
+    identity_surfaces = [
+        eval_response(events),
+        {
+            **eval_response(events),
+            "output": {
+                **eval_response(events)["output"],
+                "child_thread_reads": {
+                    "entry_count": 4,
+                    "identity_eligible_thread_ids": [],
+                    "entries": [
+                        {
+                            "thread_id": OUTER_THREAD,
+                            "parent_thread_id": ROOT_THREAD,
+                            "relation_kind": "spawn",
+                            "outcome": "ok",
+                            "identity_eligible": True,
+                            "effective_role": "default",
+                        },
+                        {
+                            "thread_id": NESTED_A,
+                            "parent_thread_id": OUTER_THREAD,
+                            "relation_kind": "spawn",
+                            "outcome": "ok",
+                            "identity_eligible": True,
+                            "effective_role": "default",
+                        },
+                    ],
+                },
+                "dispatch": {
+                    "agent_identity": {
+                        "requested_role": "paper-analysis",
+                        "loaded_identity": None,
+                        "effective_role": "default",
+                    }
+                },
+            },
+        },
+    ]
+    for response in identity_surfaces:
+        verdict = verify_topology(response, contract())
+        assert verdict["producer_status"] == STATUS_PASS
+        serialized = json.dumps(verdict)
+        for forbidden in (
+            "child_thread_reads",
+            "agentRole",
+            "agent_type",
+            "agentPath",
+            "effective_role",
+            "coordinator_identity",
+            "paper_analysis_thread_id",
         ):
-            with self.subTest(status=expected_status):
-                with tempfile.TemporaryDirectory() as tmp:
-                    tmp_path = Path(tmp)
-                    eval_path = tmp_path / "eval-response.json"
-                    adapter_path = tmp_path / "adapter.json"
-                    output_path = tmp_path / "runtime-topology.json"
-                    eval_path.write_text(
-                        json.dumps(healthy_eval_response()), encoding="utf-8"
-                    )
-                    adapter_path.write_text(json.dumps(adapter), encoding="utf-8")
-                    result = subprocess.run(
-                        [
-                            sys.executable,
-                            str(SCRIPT),
-                            "--eval-response",
-                            str(eval_path),
-                            "--adapter",
-                            str(adapter_path),
-                            "--output",
-                            str(output_path),
-                        ],
-                        capture_output=True,
-                        text=True,
-                        check=False,
-                    )
-                    self.assertEqual(result.returncode, expected_exit, result.stderr)
-                    verdict = json.loads(output_path.read_text(encoding="utf-8"))
-                    self.assertEqual(verdict["producer_status"], expected_status)
-                    self.assertIn(
-                        f"producer_status: {expected_status}", result.stderr
-                    )
-
-    @staticmethod
-    def _fail_producer_adapter():
-        adapter = healthy_adapter()
-        adapter["dispatch"]["thread_relations"] = [
-            spawn_relation(ROOT_THREAD, [COORDINATOR_THREAD], ROOT_THREAD)
-        ]
-        adapter["delegation"] = {
-            "state": "confirmed",
-            "formal_child_count": 1,
-            "child_thread_ids": [COORDINATOR_THREAD],
-            "basis": ["formal_spawn_relation"],
-            "reason_code": None,
-        }
-        adapter["child_thread_reads"] = {
-            "entry_count": 1,
-            "identity_eligible_thread_ids": [COORDINATOR_THREAD],
-            "entries": [
-                read_entry(
-                    COORDINATOR_THREAD, ROOT_THREAD, effective_role=EXPECTED_AGENT
-                )
-            ],
-        }
-        return adapter
+            assert forbidden not in serialized
 
 
-if __name__ == "__main__":
-    unittest.main()
+# --- BLOCKED ------------------------------------------------------------------
+
+
+def test_blocked_root_has_no_formal_direct_child() -> None:
+    events = [spawn(OUTER_THREAD, [NESTED_A])]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_BLOCKED
+    assert verdict["root_direct_child_count"] == 0
+    assert verdict["outer_thread_id"] is None
+
+
+def test_blocked_root_has_multiple_formal_direct_children() -> None:
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(ROOT_THREAD, [NESTED_A]),
+        spawn(OUTER_THREAD, [NESTED_B]),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_BLOCKED
+    assert verdict["root_direct_child_count"] == 2
+
+
+def test_blocked_when_eval_reports_passed_false() -> None:
+    response = {**eval_response(healthy_events()), "passed": False}
+    verdict = verify_topology(response, contract())
+    assert verdict["producer_status"] == STATUS_BLOCKED
+
+
+def test_blocked_when_version_is_null() -> None:
+    response = {**eval_response(healthy_events()), "version": None}
+    verdict = verify_topology(response, contract())
+    assert verdict["producer_status"] == STATUS_BLOCKED
+
+
+def test_blocked_when_version_is_blank_string() -> None:
+    response = {**eval_response(healthy_events()), "version": "  "}
+    verdict = verify_topology(response, contract())
+    assert verdict["producer_status"] == STATUS_BLOCKED
+
+
+def test_missing_app_server_events_blocks_via_empty_topology() -> None:
+    response = eval_response()
+    response["output"].pop("app_server_events")
+    verdict = verify_topology(response, contract())
+    assert verdict["producer_status"] == STATUS_BLOCKED
+    assert verdict["root_direct_child_count"] == 0
+
+
+# --- FAIL_PRODUCER ------------------------------------------------------------
+
+
+def test_fail_producer_outer_child_without_nested_children() -> None:
+    events = [spawn(ROOT_THREAD, [OUTER_THREAD])]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_FAIL_PRODUCER
+    assert verdict["outer_thread_id"] == OUTER_THREAD
+    assert verdict["nested_direct_child_count"] == 0
+    assert verdict["reasons"]
+
+
+# --- INVALID_EVIDENCE ---------------------------------------------------------
+
+
+def test_invalid_completed_spawn_without_concrete_receivers() -> None:
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [], method="item/completed"),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+
+
+def test_invalid_missing_receiver_thread_ids_on_completed_spawn() -> None:
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, None),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+
+
+def test_invalid_same_child_claimed_by_different_senders() -> None:
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [NESTED_A]),
+        spawn(ROOT_THREAD, [NESTED_A]),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+
+
+def test_invalid_malformed_event_shapes() -> None:
+    cases = {
+        "empty sender": [spawn(ROOT_THREAD, [OUTER_THREAD]), spawn("", [NESTED_A])],
+        "missing sender": [
+            spawn(ROOT_THREAD, [OUTER_THREAD]),
+            spawn(OUTER_THREAD, [NESTED_A], include_sender=False),
+        ],
+        "non-string receiver": [
+            spawn(ROOT_THREAD, [OUTER_THREAD]),
+            spawn(OUTER_THREAD, [NESTED_A]),
+            spawn(ROOT_THREAD, [42]),
+        ],
+        "empty-string receiver": [
+            spawn(ROOT_THREAD, [OUTER_THREAD]),
+            spawn(ROOT_THREAD, [""]),
+        ],
+        "receivers not a list": [
+            spawn(ROOT_THREAD, [OUTER_THREAD]),
+            spawn(ROOT_THREAD, "not-a-list"),
+        ],
+    }
+    for label, events in cases.items():
+        response = eval_response(events)
+        verdict = verify_topology(response, contract())
+        assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, label
+    response = eval_response()
+    response["output"]["app_server_events"] = "nope"
+    verdict = verify_topology(response, contract())
+    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, "events not a list"
+
+
+def test_invalid_common_gate_shapes() -> None:
+    base = eval_response(healthy_events())
+    cases = {
+        "passed missing": {k: v for k, v in base.items() if k != "passed"},
+        "passed not bool": {**base, "passed": "true"},
+        "version not string": {**base, "version": 154},
+        "thread_id missing": {
+            **base,
+            "output": {"app_server_events": base["output"]["app_server_events"]},
+        },
+        "response not object": [base],
+    }
+    for label, response in cases.items():
+        verdict = verify_topology(response, contract())
+        assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, label
+
+
+def test_invalid_when_contract_lacks_formal_spawn_declaration() -> None:
+    broken = contract()
+    del broken["raw_identity_path"]
+    verdict = verify_topology(eval_response(healthy_events()), broken)
+    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+
+
+def test_invalid_when_contract_is_not_pinned_revision() -> None:
+    drifted = {**contract(), "contract_id": "skills-test-fixtures/codex-eval-adapter@8"}
+    verdict = verify_topology(eval_response(healthy_events()), drifted)
+    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+
+
+# --- CLI ----------------------------------------------------------------------
+
+
+def _write_contract(tmp_path: pathlib.Path) -> pathlib.Path:
+    path = tmp_path / "contract.json"
+    path.write_text(json.dumps(contract()), encoding="utf-8")
+    return path
+
+
+def test_cli_end_to_end_exit_codes(tmp_path: pathlib.Path) -> None:
+    verifier = pathlib.Path(__file__).parent / "verify_codex_full_mode_topology.py"
+    contract_path = _write_contract(tmp_path)
+
+    pass_response = tmp_path / "pass-response.json"
+    pass_response.write_text(
+        json.dumps(eval_response(healthy_events())), encoding="utf-8"
+    )
+    pass_out = tmp_path / "pass-verdict.json"
+    passed = subprocess.run(
+        [
+            sys.executable,
+            str(verifier),
+            "--eval-response",
+            str(pass_response),
+            "--contract",
+            str(contract_path),
+            "--output",
+            str(pass_out),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert passed.returncode == 0, passed.stderr
+    assert json.loads(pass_out.read_text(encoding="utf-8"))["producer_status"] == (
+        STATUS_PASS
+    )
+
+    fail_response = tmp_path / "fail-response.json"
+    fail_response.write_text(
+        json.dumps(eval_response([spawn(ROOT_THREAD, [OUTER_THREAD])])),
+        encoding="utf-8",
+    )
+    fail_out = tmp_path / "fail-verdict.json"
+    failed = subprocess.run(
+        [
+            sys.executable,
+            str(verifier),
+            "--eval-response",
+            str(fail_response),
+            "--contract",
+            str(contract_path),
+            "--output",
+            str(fail_out),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert failed.returncode == 1, failed.stderr
+    assert json.loads(fail_out.read_text(encoding="utf-8"))["producer_status"] == (
+        STATUS_FAIL_PRODUCER
+    )

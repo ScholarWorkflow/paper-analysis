@@ -1,33 +1,50 @@
 # Codex Full-Mode Runtime Recipe — `PA-CODEX-FULL-LEAF-01`
 
 Producer-owned acceptance recipe for issue #13. It proves, on a clean
-consumer and the real `mode: full` entry path, that the installed exact
-`paper-analysis` coordinator produces native nested subagent delegation at
-Step 3 instead of inlining the three-way analysis.
+consumer and the real `mode: full` entry path, that the unique formal outer
+child spawns native nested subagent delegation at Step 3 instead of inlining
+the three-way analysis.
 
 本文件是 producer 仓库内的正式 Test Recipe：执行者按本文逐步操作，不依赖
 issue 文本；issue 只描述目标，本文描述可执行步骤与判定。
 
-## 1. Identity
+Identity 边界（本 recipe 的 hard boundary）：runtime agent identity /
+`agent_type` 永远不是本 case 的 PASS / FAIL / BLOCKED 条件。本 case 只验
+formal nested delegation topology：
+
+```text
+root thread
+  -> exactly 1 formal direct outer child
+       -> >= 1 formal direct nested child
+```
+
+`outer child` 只按 formal thread ownership 定位，不声明、不判断它的
+runtime agent identity。
+
+## 1. Identity（Test Case 元数据，不是 agent identity）
 
 - **Case ID**: `PA-CODEX-FULL-LEAF-01`
-- **Acceptance criterion**: producer 正式 `mode: full` 入口自然到达 Step 3 时，
-  exact `paper-analysis` coordinator 至少产生 1 个 formal **direct** nested
-  analysis child。
-- **Invariant**: root 只负责 outer dispatch；内部 nested delegation 必须来自
-  安装后的 coordinator instructions（`developer_instructions`），不得由 root
-  prompt 强迫、描述或暗示。
-- **Does NOT prove**: 三个 leaf 的业务内容质量、必须同时存在 3 个 live child、
-  OCR/future-work/facts 质量、长论文质量、`professor-contact` 集成质量、
-  OpenCode runtime compatibility。
+- **Acceptance criterion**: 固定 root prompt 成功产生唯一 formal outer
+  child 后，该 outer child 至少产生 1 个 formal direct nested child。
+- **Invariant**: root 只负责一次 outer dispatch；nested delegation 必须来自
+  安装后的 coordinator instructions（`developer_instructions`），不得由
+  root prompt 强迫、描述或暗示。
+- **Does NOT prove**:
+  - runtime child 的 `agent_type`；
+  - requested/loaded/effective role；
+  - exact agent identity；
+  - 三个 leaf 的内容质量或必须同时存在 3 个 live child；
+  - OCR/future-work/facts 质量；
+  - `professor-contact` 集成质量；
+  - OpenCode runtime compatibility。
 
 业务结构不变：full Step 3 三路 semantic roles
 （① 内容沉淀；② 贡献与批判；③ 帮助评估）由 deterministic producer test
-锁定；runtime smoke 只要求 `>= 1` 个 direct nested child。
+锁定；runtime smoke 只要求 `>= 1` 个 formal direct nested child。
 
 ## 2. Basis
 
-固定 shared fixture revision（本 recipe 编写时当前 master；执行前必须复核）：
+固定 shared fixture revision（执行前必须复核）：
 
 ```text
 skills-test-fixtures:
@@ -36,25 +53,38 @@ contract:
 skills-test-fixtures/codex-eval-adapter@9
 ```
 
-adapter@9 可使用的 machine evidence：
+本 case 只使用：
 
-- `output.app_server_events` 中 formal `spawnAgent` relation；
-- `dispatch.thread_relations[]`；
-- `output.child_thread_reads[]` 的 direct parent attribution / persisted
-  role（可用时）；
-- `dispatch.agent_identity[...]` identity dimensions（可用时）；
-- top-level independent `delegation` dimension。
+```text
+/eval top-level passed/version
+output.thread_id
+output.app_server_events
+pinned contract 中 formal spawnAgent relation 规则
+```
+
+本 case **不使用**：
+
+```text
+parse_codex_eval_evidence.py 的 adapter verdict
+output.child_thread_reads
+dispatch.agent_identity
+requested_role / loaded_identity / effective_role
+agent_type / agentRole / agentPath
+模型文本中的 agent 名称
+```
+
+说明：pinned @9 contract 仍是 formal topology field/rule 的共享事实来源
+（`app_server_event_envelope`、`raw_identity_path.formal_spawn_relation`、
+`delegation.fail_closed`）；本 producer verifier 直接消费 raw
+`/eval` 结构化事件，不让 shared adapter 的 identity-conflict 实现进入
+merge verdict 链。
 
 版本语义：
 
-- `/eval.version` 必须记录；`null` 属于 capability blocker；
-- 非 null 版本字符串是 provenance-only；版本号与历史 characterization 不同，
-  本身不 BLOCK / FAIL；
-- parser/contract 无法解释实际结构时，按 adapter / producer verifier 的
-  machine evidence 判 `BLOCKED` / `INVALID_EVIDENCE`。
-
-历史 eval-server merge `3efc910ccf8315502be0e0c6c81a91f1ee2b3a6c` 只作为
-adapter@8/9 来源 provenance，不是 checkout equality gate。
+- `/eval.version` 记录 provenance；`version == null` → `BLOCKED`；
+- 非 null 版本字符串变化本身不 BLOCK / FAIL；
+- 当前 runtime 若不再提供 contract 所需 formal topology 字段 →
+  `BLOCKED` / `INVALID_EVIDENCE`，并保存原始 response 做 characterization。
 
 ## 3. Prerequisites
 
@@ -80,8 +110,7 @@ export EVAL_SERVER_DIR=/absolute/path/to/eval-server
 
 本 Codex case **不启动 `skills-test-fixtures` runtime fixture**，因此不得
 伪造 `fixture_run_id`。记录真实 `recipe_run_id`、fixture repo SHA/dirty、
-eval `thread_id` / `runtime_generation`。`fixture_run_id` 只用于实际启动
-runtime fixture 的 recipe。
+eval runtime provenance。
 
 ## 4. Exclusive run root / provenance
 
@@ -152,9 +181,10 @@ test -f "$CONSUMER/.codex/agents/paper-analysis.toml"
 test -f "$CONSUMER/.agents/skills/paper-analysis/tests/fixtures/paper.txt"
 ```
 
-用 `yq` 证明 lock 确实 pin 到 final Git commit（APM 0.29 lockfile 把
-`repo_url` 归一化为小写 `owner/repo`，原始大小写保留在
-`materialization_repo_url`，主机在 `host` 字段）：
+用 `yq` 证明 lock 确实 pin 到 final Git commit。APM 0.29 lockfile 把
+`repo_url` 归一化为小写 `owner/repo`（不是 `https://...` URL 形式），原始
+大小写保留在 `materialization_repo_url`，主机在 `host` 字段，所以机械
+判定用 `host` + `materialization_repo_url` 组合：
 
 ```bash
 yq -e '.dependencies[] | select(.resolved_commit == strenv(FINAL_HEAD_SHA)) | select(.host == "github.com" and .materialization_repo_url == "ScholarWorkflow/paper-analysis")' \
@@ -164,8 +194,8 @@ cp "$CONSUMER/apm.lock.yaml" "$RUN_ROOT/output/apm.lock.yaml"
 
 ## 6. Generated projection check
 
-canonical test 不能替代 generated projection evidence。直接解析安装后
-Codex agent：
+安装后只检查本 issue 的行为 contract，不用 TOML `name` 做 runtime
+identity gate：
 
 ```bash
 python3 - <<'PY'
@@ -179,8 +209,6 @@ consumer = pathlib.Path(os.environ["CONSUMER"])
 run_root = pathlib.Path(os.environ["RUN_ROOT"])
 agent = consumer / ".codex/agents/paper-analysis.toml"
 data = tomllib.loads(agent.read_text(encoding="utf-8"))
-
-assert data["name"] == "paper-analysis"
 instructions = data["developer_instructions"]
 assert isinstance(instructions, str) and instructions
 
@@ -193,7 +221,6 @@ assert all(checks.values())
 
 out = {
     "schema": 1,
-    "name": data["name"],
     "checks": checks,
     "sha256": hashlib.sha256(agent.read_bytes()).hexdigest(),
 }
@@ -216,19 +243,19 @@ EOF
 
 cat >"$RUN_ROOT/config/root-prompt.txt" <<EOF
 只执行一次 paper-analysis full-mode producer runtime smoke。
-从当前 clean consumer 中调用已安装的 exact custom agent paper-analysis 一次，传入：
+从当前 clean consumer 中调用已安装的 paper-analysis custom agent 一次，传入：
 paper: $PAPER_TXT
 research_direction_file: $RUN_ROOT/config/research-direction.txt
 mode: full
 save: $CONSUMER/runtime-output
-等待该 coordinator 返回后结束。
-你作为 root 只负责这次 outer dispatch：不要自己分析论文，不要为 paper-analysis 创建任何内部分析 leaf，不要指示它为了测试 spawn/创建 leaf，也不要描述它内部 Step 3 的编排。paper-analysis 内部是否 delegation 必须完全来自安装后的 developer_instructions。
+等待该 outer child 返回后结束。
+你作为 root 只负责这一次 outer dispatch：不要自己分析论文，不要为该 child 创建任何内部分析 leaf，不要指示它为了测试 spawn/创建 leaf，也不要描述它内部 Step 3 的编排。内部是否 delegation 必须完全来自安装后的 developer_instructions。
 EOF
 ```
 
 禁止临场修改 prompt / fixture。
 
-## 8. Eval request
+## 8. Execution — existing eval service only
 
 从既有 eval-server checkout 读取端口，不管理服务生命周期：
 
@@ -262,9 +289,10 @@ args = [
 ]
 request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 900}
 # timeout: caller-side wall-clock budget for one full nested run
-# (root -> coordinator -> nested leaves -> assembly). 300s proved too small
-# once delegation actually happens; this budget caps the run, it never
-# changes model, reasoning, sandbox or prompt.
+# (root -> outer child -> nested leaves -> assembly). 300s proved too small
+# once delegation actually happens (the eval service aborts with HTTP 504);
+# this budget caps the run, it never changes model, reasoning, sandbox or
+# prompt.
 (run_root / "config/eval-request.json").write_text(
     json.dumps(request, ensure_ascii=False, indent=2) + "\n",
     encoding="utf-8",
@@ -280,94 +308,75 @@ curl --fail-with-body -sS \
   >"$RUN_ROOT/output/eval-response.json"
 ```
 
-## 9. Shared adapter
+### 重要：本 case 不调用 shared adapter 形成 verdict
 
-```bash
-python3 "$FIXTURES_DIR/scripts/parse_codex_eval_evidence.py" \
-  --contract "$FIXTURES_DIR/configs/codex-eval-adapter-contract.json" \
-  --eval-response "$RUN_ROOT/output/eval-response.json" \
-  --expected-agent paper-analysis \
-  --consumer-root "$CONSUMER" \
-  --output "$RUN_ROOT/output/adapter.json"
+**不要执行：**
+
+```text
+parse_codex_eval_evidence.py --expected-agent ...
+parse_codex_eval_evidence.py --consumer-root ...
+parse_codex_eval_evidence.py ... 作为 PASS/FAIL/BLOCKED gate
 ```
 
-shared adapter 只提供 wiring / dispatch / identity / delegation evidence，
-不输出本 producer 的 PASS/FAIL。
+也不要删除或改写 `eval-response.json` 中的 `child_thread_reads` 来“让
+adapter 通过”。原始响应完整保存；本 producer topology verifier 根本不消费
+identity surface。
 
-## 10. Producer topology verifier
+## 9. Producer topology verifier
 
 ```bash
 python3 "$PRODUCER_REPO/.apm/skills/paper-analysis/tests/verify_codex_full_mode_topology.py" \
   --eval-response "$RUN_ROOT/output/eval-response.json" \
-  --adapter "$RUN_ROOT/output/adapter.json" \
+  --contract "$FIXTURES_DIR/configs/codex-eval-adapter-contract.json" \
   --output "$RUN_ROOT/output/runtime-topology.json"
 ```
 
-### A. Common evidence gate
+verifier 必须执行：
 
-producer verifier 先确认：
+1. 顶层 `/eval.passed == true`；否则在没有 producer-specific violation
+   证据时 `BLOCKED`；
+2. `version` 非 null，原样记录 provenance；
+3. 从 `output.thread_id` 取得 root thread id；
+4. 从 `output.app_server_events` 按 pinned contract 提取 formal
+   `spawnAgent` ownership（`item/started` | `item/completed`、
+   `message.params.item`、`item.type == collabAgentToolCall`、
+   `item.tool == spawnAgent`、非空 `senderThreadId`、非空字符串数组
+   `receiverThreadIds`）；
+5. dedupe started/completed 的同一 formal edge；
+6. root direct formal child 数量：`0` → `BLOCKED`；`>1` → `BLOCKED`；
+   `==1` → 得到 `outer_thread_id`；
+7. 查 sender 为 `outer_thread_id` 的 formal nested children：`>=1` →
+   topology threshold 满足；`0` → `FAIL_PRODUCER`；
+8. formal ownership/malformed evidence 冲突（completed spawn 无 concrete
+   receiver、relation shape 损坏、同一 child 被不同 sender claim、
+   contract 未声明 formal spawn 规则）→ `INVALID_EVIDENCE`。
 
-- `/eval` 顶层 `passed == true`；
-- `version` 非 null，并原样记录；
-- adapter/eval JSON 满足 pinned adapter contract；
-- 无 fixture/harness contamination、dispatch mismatch、malformed evidence。
+**verifier 不得读取 `child_thread_reads` 或任何 identity 字段**；prompt
+文本、assistant/model 自述、`subAgentActivity.agentPath` 均不得创建、修改
+或否定 formal ownership。
 
-**禁止用 `version == 某个字符串` 作为 PASS/BLOCK/FAIL 条件。**
+verdict 输出字段（无任何暗示 identity 已验收的名称）：
 
-availability/provider/model/harness/capability 不足 → `BLOCKED`；
-结构矛盾/损坏 → `INVALID_EVIDENCE`。
-
-### B. Exact coordinator identity
-
-本 case 必须证明 nested edge 的 sender 是 exact `paper-analysis`
-coordinator，而不是 generic child。
-
-从 adapter@9 的结构化 identity evidence 唯一定位：
-
-```text
-identity_eligible == true
-effective_role == "paper-analysis"
+```json
+{
+  "schema": 1,
+  "case_id": "PA-CODEX-FULL-LEAF-01",
+  "producer_status": "PASS",
+  "root_thread_id": "...",
+  "root_direct_child_count": 1,
+  "outer_thread_id": "...",
+  "nested_direct_child_count": 1,
+  "nested_child_thread_ids": ["..."],
+  "formal_spawn_relation_count": 2,
+  "reasons": [],
+  "provenance": {"eval_version": "...", "contract_id": "..."}
+}
 ```
-
-并确认其 `parent_thread_id == eval root thread_id`。
-
-如果 exact coordinator identity 不能机器确认：`BLOCKED` /
-`INVALID_EVIDENCE`；不得用 root prompt 文本或模型自述补证据。
-
-### C. Changed runtime contract: direct nested delegation
-
-从 `adapter.dispatch.thread_relations[]` 只取：
-
-```text
-tool == "spawnAgent"
-sender_thread_id == coordinator_thread_id
-```
-
-将非空 concrete `receiver_thread_ids` 去重为 `nested_child_thread_ids`。
-
-若当前 `child_thread_reads` 有对应 child，cross-check：
-
-```text
-parent_thread_id == coordinator_thread_id
-```
-
-冲突 → `INVALID_EVIDENCE`。
-
-本 case 唯一 runtime PASS threshold：
-
-```text
-len(nested_child_thread_ids) >= 1
-```
-
-不要求 3 个 live child，不要求 child 业务输出质量，不要求 child completion
-artifact。leaf no-child / no-recursion / gap-only 等由 deterministic suite
-验证；live smoke 中额外观察到异常可保存为 diagnostics，但不把未修改
-invariant 重复变成第二套 LLM runtime threshold。
 
 verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
 `3` INVALID_EVIDENCE。
 
-## 11. Producer deterministic suite
+## 10. Producer deterministic suite
 
 ```bash
 (
@@ -388,20 +397,20 @@ verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
 JSON/JSONL、YAML/TOML 的正式判断使用结构化 parser（`jq` / `yq` /
 `tomllib`），不用 grep/sed/awk 代替字段判定。
 
-## 12. Interaction
+## 11. Interaction
 
 无。`paper`、`research_direction_file`、`mode`、`save` 全部固定提供；tiny
 `.txt` fixture 不触发 PDF/OCR/Zotero/MCP/browser/user approval。
 
-如果 coordinator 返回 `needs_input`：
+如果运行中需要额外 user input：
 
 - 保存原始 machine response；
 - 不临场补 prompt；
-- 若 exact coordinator 已确认、input delivery 正常且缺失项本应由固定 input
-  满足，按 producer behavior 判 FAIL；
-- 若是 dispatch/input delivery/provider/runtime/harness 问题，判 `BLOCKED`。
+- 未进入目标 full path → `BLOCKED`；
+- 只有在 evidence 已明确进入唯一 outer child 的 producer-owned full path，
+  且固定完整输入理应足够时，才可按 producer behavior 判 FAIL。
 
-## 13. Evidence
+## 12. Evidence
 
 至少保留：
 
@@ -423,7 +432,6 @@ output/apm-install.stderr.txt
 output/generated-projection.json
 output/eval-request.json
 output/eval-response.json
-output/adapter.json
 output/runtime-topology.json
 output/uv-sync.stdout.txt
 output/uv-sync.stderr.txt
@@ -432,74 +440,87 @@ output/pytest.stderr.txt
 output/git-diff-check.txt
 ```
 
-完整 raw response 保留在 `/tmp` run root；PR 只贴足以证明结论的最小脱敏
-machine evidence。
+完整 raw response 保留在本次 `/tmp` run root；PR 只贴足以证明结论的最小
+脱敏 machine evidence。不要求 `adapter.json`，因为 shared adapter 不属于
+本 case 的 merge verdict 链。
 
-## 14. Verdict
+## 13. Verdict
 
 ### PASS
 
 全部满足：
 
-- clean consumer 是本次新建，来源为显式 Git dependency；
+- clean consumer 为本次新建，来源为显式 Git dependency；
 - lock `resolved_commit == FINAL_HEAD_SHA`；
 - fixture repo exact SHA 且 dirty=no；
 - `manual_patch=no`；
-- generated `paper-analysis.toml` name 正确，且 `developer_instructions`
-  包含两个 exact marker；
-- eval common evidence healthy；
-- exact `paper-analysis` coordinator identity 可机器确认，且为 root direct
-  child；
-- coordinator 有 `>=1` formal direct `spawnAgent` nested child；
-- parent attribution 无冲突；
+- generated Codex projection 保留两个 exact orchestration markers；
+- `/eval` execution healthy，version 有 provenance；
+- root 恰有 1 个 formal direct outer child；
+- outer child 有 `>=1` formal direct `spawnAgent` nested child；
+- formal ownership 无冲突；
 - producer deterministic suite 全 PASS；
 - OpenCode native deterministic/static contract 无回归。
 
+**任何 identity 字段的缺失、`default`、mismatch、unobservable 或
+contradiction 均不改变上述 topology verdict。**
+
 ### FAIL_PRODUCER
 
-只有在 common evidence healthy、exact coordinator 已确认、固定 input 已正确
-送达时，出现本 issue 直接负责的行为失败：
+只有在：
 
-- 正式 `mode: full` coordinator 到达目标路径后没有 formal direct nested
-  child；
+- `/eval` healthy；
+- 固定 input 正常；
+- root 恰有唯一 formal outer child；
+- formal topology evidence 本身有效；
+
+并出现以下本 issue 直接负责的行为失败时才判 FAIL：
+
+- outer child 没有任何 formal direct nested `spawnAgent` child；
 - canonical agent 缺任一 exact marker；
 - generated Codex projection 丢失任一 exact marker；
-- 固定完整输入下，producer-owned behavior 错误导致未进入正式 full path /
-  错误 `needs_input`。
+- producer deterministic contract 被本改动破坏。
 
 ### BLOCKED
 
 包括：
 
 - provider/model unavailable；
-- eval service / harness failure；
+- eval service / harness failure（`passed == false`）；
 - `/eval.version == null`；
-- exact coordinator dispatch / identity 无法被当前结构化 evidence 确认；
+- root 没有 formal direct outer child，无法证明进入目标 path；
+- root 出现多个不同 formal direct children，固定 outer dispatch 无法唯一
+  归属；
 - clean consumer/provenance 不成立；
 - runtime 明确报告 permission/depth/concurrency/subagent capability
   blocker；
-- adapter 表明 producer verdict 所需 machine surface 不可观察。
+- 当前 runtime/eval evidence surface 不再提供本 Recipe 所需 formal
+  topology 字段。
 
-**版本字符串变化本身不是 BLOCKED。**
+**不得因为 `agent_type=default`、identity 不可观察或 identity mismatch 判
+BLOCKED。**
 
 ### INVALID_EVIDENCE
 
-包括：
+只限 formal topology / source evidence 本身损坏或自相矛盾：
 
-- adapter/eval JSON malformed 或与 pinned contract 矛盾；
-- coordinator identity 多义；
-- formal relation 与 child parent attribution 冲突；
-- 同一 child 有冲突 ownership；
+- `eval-response.json` malformed；
+- completed formal `spawnAgent` relation 缺 concrete receivers；
+- formal sender/receiver shape malformed；
+- 同一 child 被不同 sender 的 formal spawn relation claim；
 - source isolation / manual patch / provenance 证据自相矛盾。
 
-## 15. Retry / invalidation
+**identity contradiction 不属于本 case 的 `INVALID_EVIDENCE` 条件。**
+
+## 14. Retry / invalidation
 
 - retry 保持同一 input、prompt、model、reasoning、sandbox、config；
-- 不换模型、不提高 reasoning、不改 prompt、不手动告诉 coordinator spawn；
+- 不换模型、不提高 reasoning、不改 prompt、不手动告诉 outer child spawn；
 - 不修改 shared fixtures/eval-server 追绿；
+- 不通过删改 `child_thread_reads` 或 identity events 制造 PASS（本 producer
+  verifier 根本不消费它们；原始响应必须完整保存）；
 - producer SHA 或 fixture SHA 变化 → 旧 acceptance 失效，重建 clean
   consumer；
-- Codex version 变化只更新 provenance；只有 machine evidence
-  surface/contract 真正不兼容时才按 adapter/verifier 结果 BLOCK/INVALID，
-  并基于真实输出做 characterization；
+- Codex version 变化只更新 provenance；只有 formal topology surface 真正
+  不兼容时才 BLOCK/INVALID，并保存真实输出 characterization；
 - PASS evidence 闭合后停止，不追加长论文或下游 Stage 2 E2E。

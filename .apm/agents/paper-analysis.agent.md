@@ -247,7 +247,7 @@ Title / 作者 / 期刊·会议 / 年份 / DOI / 本地 PDF 路径(有则)
 
 ### Step 3 — 并行子代理（Spawn 拓扑 · 拆 3 方向）
 
-将全文放入临时文件后，直接使用当前运行时提供的原生 subagent delegation workflow 分派三个只读分析工作单元（OpenCode 即原生 `task`）。每个工作单元只接收全文路径、角色和产出要求，直接返回 Markdown，不修改文件。
+将全文放入临时文件后，Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元，分别对应表中的三路语义角色；三路结果必须全部来自 delegated child，coordinator 不得 inline 完成或降级为 best-effort。直接使用当前运行时提供的原生 subagent delegation workflow（OpenCode 即原生 `task`），不硬编码 Codex 版本私有的 tool/function schema。每个工作单元只接收全文路径、角色和产出要求，直接返回 Markdown，不修改文件。
 
 | 子代理 | 方向 | 产出（返回的 Markdown） |
 |---|---|---|

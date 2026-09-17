@@ -2,8 +2,8 @@
 
 Producer-owned acceptance recipe for issue #13. It proves, on a clean
 consumer and the real `mode: full` entry path, that the unique formal outer
-child spawns native nested subagent delegation at Step 3 instead of inlining
-the three-way analysis.
+child spawns exactly three native nested subagent delegation children at Step 3
+instead of inlining the three-way analysis.
 
 本文件是 producer 仓库内的正式 Test Recipe：执行者按本文逐步操作，不依赖
 issue 文本；issue 只描述目标，本文描述可执行步骤与判定。
@@ -15,7 +15,7 @@ formal nested delegation topology：
 ```text
 root thread
   -> exactly 1 formal direct outer child
-       -> >= 1 formal direct nested child
+       -> exactly 3 distinct formal direct nested children
 ```
 
 `outer child` 只按 formal thread ownership 定位，不声明、不判断它的
@@ -25,7 +25,7 @@ runtime agent identity。
 
 - **Case ID**: `PA-CODEX-FULL-LEAF-01`
 - **Acceptance criterion**: 固定 root prompt 成功产生唯一 formal outer
-  child 后，该 outer child 至少产生 1 个 formal direct nested child。
+  child 后，该 outer child 必须产生恰好 3 个 distinct formal direct nested child。
 - **Invariant**: root 只负责一次 outer dispatch；nested delegation 必须来自
   安装后的 coordinator instructions（`developer_instructions`），不得由
   root prompt 强迫、描述或暗示。
@@ -40,7 +40,7 @@ runtime agent identity。
 
 业务结构不变：full Step 3 三路 semantic roles
 （① 内容沉淀；② 贡献与批判；③ 帮助评估）由 deterministic producer test
-锁定；runtime smoke 只要求 `>= 1` 个 formal direct nested child。
+锁定；runtime smoke 要求恰好 `3` 个 distinct formal direct nested child。
 
 ## 2. Basis
 
@@ -348,8 +348,8 @@ verifier 必须执行：
 5. dedupe started/completed 的同一 formal edge；
 6. root direct formal child 数量：`0` → `BLOCKED`；`>1` → `BLOCKED`；
    `==1` → 得到 `outer_thread_id`；
-7. 查 sender 为 `outer_thread_id` 的 formal nested children：`>=1` →
-   topology threshold 满足；`0` → `FAIL_PRODUCER`；
+7. 查 sender 为 `outer_thread_id` 的 distinct formal nested children：`==3` →
+   topology threshold 满足；`0/1/2/>3` → `FAIL_PRODUCER`；
 8. formal ownership/malformed evidence 冲突（`app_server_events` entry 或
    `message` wrapper 缺失/非 object、completed spawn 无 concrete receiver、
    relation shape 损坏、同一 child 被不同 sender claim、contract 未声明
@@ -369,9 +369,9 @@ verdict 输出字段（无任何暗示 identity 已验收的名称）：
   "root_thread_id": "...",
   "root_direct_child_count": 1,
   "outer_thread_id": "...",
-  "nested_direct_child_count": 1,
-  "nested_child_thread_ids": ["..."],
-  "formal_spawn_relation_count": 2,
+  "nested_direct_child_count": 3,
+  "nested_child_thread_ids": ["...", "...", "..."],
+  "formal_spawn_relation_count": 4,
   "reasons": [],
   "provenance": {"eval_version": "...", "contract_id": "..."}
 }
@@ -461,7 +461,7 @@ output/git-diff-check.txt
 - generated Codex projection 保留两个 exact orchestration markers；
 - `/eval` execution healthy，version 有 provenance；
 - root 恰有 1 个 formal direct outer child；
-- outer child 有 `>=1` formal direct `spawnAgent` nested child；
+- outer child 有恰好 `3` 个 distinct formal direct `spawnAgent` nested child；
 - formal ownership 无冲突；
 - producer deterministic suite 全 PASS；
 - OpenCode native deterministic/static contract 无回归。
@@ -480,7 +480,7 @@ contradiction 均不改变上述 topology verdict。**
 
 并出现以下本 issue 直接负责的行为失败时才判 FAIL：
 
-- outer child 没有任何 formal direct nested `spawnAgent` child；
+- outer child 的 distinct formal direct nested `spawnAgent` child 数量不是 `3`（`0/1/2/>3`）；
 - canonical agent 缺任一 exact marker；
 - generated Codex projection 丢失任一 exact marker；
 - producer deterministic contract 被本改动破坏。

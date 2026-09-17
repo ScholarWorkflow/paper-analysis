@@ -48,6 +48,8 @@ REQUIRED_ORCHESTRATION_CONVENTIONS = (
      "Codex full Step 3 必须使用运行时原生 subagent delegation"),
     ("codex full step3 no inline replacement",
      "coordinator 不得 inline 执行三路分析来替代 delegation"),
+    ("codex full step3 exactly three delegated units",
+     "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元"),
     ("native question priority", "必须优先使用原生 `question`"),
     ("needs_input no silent default", "不得静默选择默认值"),
     ("needs_input same-thread resume", "resume 同一 coordinator"),
@@ -61,6 +63,7 @@ REQUIRED_ORCHESTRATION_CONVENTIONS = (
 CODEX_FULL_DELEGATION_MARKERS = (
     "Codex full Step 3 必须使用运行时原生 subagent delegation",
     "coordinator 不得 inline 执行三路分析来替代 delegation",
+    "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
 )
 
 # The three full-mode Step 3 semantic roles must survive unchanged; the Codex
@@ -365,6 +368,13 @@ class AgentRuntimeContractTests(unittest.TestCase):
         for marker in CODEX_FULL_DELEGATION_MARKERS:
             marker_line = next(line for line in text.splitlines() if marker in line)
             self.assertNotIn("Task", marker_line, marker)
+
+    def test_codex_full_step3_requires_three_children_and_child_owned_results(self):
+        text = AGENT.read_text(encoding="utf-8")
+        step3 = text.split("### Step 3 — 并行子代理", 1)[1].split("### Step 4", 1)[0]
+        self.assertIn("Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元", step3)
+        self.assertIn("三路结果必须全部来自 delegated child", step3)
+        self.assertNotIn("至少", step3)
 
     def test_delegation_gate_rejects_generic_subagent_wording(self):
         generic = (

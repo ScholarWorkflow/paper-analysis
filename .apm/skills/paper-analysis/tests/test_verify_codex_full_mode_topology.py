@@ -121,10 +121,10 @@ def test_pass_unique_outer_child_with_nested_children() -> None:
     }
 
 
-def test_pass_minimal_single_nested_child() -> None:
+def test_fail_producer_minimal_single_nested_child() -> None:
     events = [spawn(ROOT_THREAD, [OUTER_THREAD]), spawn(OUTER_THREAD, [NESTED_A])]
     verdict = verify_topology(eval_response(events), contract())
-    assert verdict["producer_status"] == STATUS_PASS
+    assert verdict["producer_status"] == STATUS_FAIL_PRODUCER
     assert verdict["formal_spawn_relation_count"] == 2
     assert verdict["nested_child_thread_ids"] == [NESTED_A]
 
@@ -135,11 +135,13 @@ def test_started_and_completed_of_same_edge_deduplicate() -> None:
         spawn(ROOT_THREAD, [OUTER_THREAD]),
         spawn(OUTER_THREAD, [], method="item/started"),
         spawn(OUTER_THREAD, [NESTED_A]),
+        spawn(OUTER_THREAD, [NESTED_B]),
+        spawn(OUTER_THREAD, [NESTED_C]),
         spawn(OUTER_THREAD, [NESTED_A]),
     ]
     verdict = verify_topology(eval_response(events), contract())
     assert verdict["producer_status"] == STATUS_PASS
-    assert verdict["formal_spawn_relation_count"] == 2
+    assert verdict["formal_spawn_relation_count"] == 4
 
 
 def test_started_without_concrete_receivers_and_sender_is_ignored() -> None:
@@ -147,6 +149,8 @@ def test_started_without_concrete_receivers_and_sender_is_ignored() -> None:
         spawn(ROOT_THREAD, None, method="item/started", include_sender=False),
         spawn(ROOT_THREAD, [OUTER_THREAD]),
         spawn(OUTER_THREAD, [NESTED_A]),
+        spawn(OUTER_THREAD, [NESTED_B]),
+        spawn(OUTER_THREAD, [NESTED_C]),
     ]
     verdict = verify_topology(eval_response(events), contract())
     assert verdict["producer_status"] == STATUS_PASS
@@ -158,11 +162,13 @@ def test_non_spawn_collab_tools_never_contribute_formal_children() -> None:
         spawn(ROOT_THREAD, [NESTED_A], tool="wait"),
         spawn(ROOT_THREAD, [NESTED_B], tool="sendInput"),
         spawn(OUTER_THREAD, [NESTED_A]),
+        spawn(OUTER_THREAD, [NESTED_B]),
+        spawn(OUTER_THREAD, [NESTED_C]),
     ]
     verdict = verify_topology(eval_response(events), contract())
     assert verdict["producer_status"] == STATUS_PASS
-    assert verdict["nested_child_thread_ids"] == [NESTED_A]
-    assert verdict["formal_spawn_relation_count"] == 2
+    assert verdict["nested_child_thread_ids"] == [NESTED_A, NESTED_B, NESTED_C]
+    assert verdict["formal_spawn_relation_count"] == 4
 
 
 def test_identity_diagnostics_never_change_pass_verdict() -> None:
@@ -281,6 +287,38 @@ def test_fail_producer_outer_child_without_nested_children() -> None:
     assert verdict["outer_thread_id"] == OUTER_THREAD
     assert verdict["nested_direct_child_count"] == 0
     assert verdict["reasons"]
+
+
+def test_fail_producer_outer_child_with_one_nested_child() -> None:
+    events = [spawn(ROOT_THREAD, [OUTER_THREAD]), spawn(OUTER_THREAD, [NESTED_A])]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_FAIL_PRODUCER
+    assert verdict["nested_direct_child_count"] == 1
+
+
+def test_fail_producer_outer_child_with_two_nested_children() -> None:
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [NESTED_A]),
+        spawn(OUTER_THREAD, [NESTED_B]),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_FAIL_PRODUCER
+    assert verdict["nested_direct_child_count"] == 2
+
+
+def test_fail_producer_outer_child_with_four_nested_children() -> None:
+    nested_d = "66666666-6666-7666-6666-666666666666"
+    events = [
+        spawn(ROOT_THREAD, [OUTER_THREAD]),
+        spawn(OUTER_THREAD, [NESTED_A]),
+        spawn(OUTER_THREAD, [NESTED_B]),
+        spawn(OUTER_THREAD, [NESTED_C]),
+        spawn(OUTER_THREAD, [nested_d]),
+    ]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_FAIL_PRODUCER
+    assert verdict["nested_direct_child_count"] == 4
 
 
 # --- INVALID_EVIDENCE ---------------------------------------------------------

@@ -17,7 +17,7 @@ The single runtime PASS threshold (issue #13) is the formal topology:
 
     root thread
       -> exactly 1 formal direct outer child
-           -> >= 1 formal direct nested child
+           -> exactly 3 distinct formal direct nested children
 
 where formal children come only from contract-defined ``spawnAgent``
 relations inside ``output.app_server_events``. Prompt text, assistant/model
@@ -27,7 +27,8 @@ Producer statuses:
 
 * ``PASS``             the formal topology threshold holds on healthy evidence
 * ``FAIL_PRODUCER``    evidence is healthy and the unique formal outer child
-                       exists, but it spawned no formal direct nested child
+                       exists, but it spawned anything other than exactly three
+                       formal direct nested children
 * ``BLOCKED``          availability/harness gap: harness failure, runtime
                        version absent, or the root thread has zero or multiple
                        formal direct children
@@ -52,6 +53,7 @@ import sys
 SCHEMA = 1
 CASE_ID = "PA-CODEX-FULL-LEAF-01"
 PINNED_CONTRACT_ID = "skills-test-fixtures/codex-eval-adapter@9"
+EXPECTED_NESTED_CHILD_COUNT = 3
 
 STATUS_PASS = "PASS"
 STATUS_FAIL_PRODUCER = "FAIL_PRODUCER"
@@ -406,18 +408,20 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
         )
     outer_thread_id = root_children[0]
     nested = sorted(children_by_sender.get(outer_thread_id, ()))
-    if not nested:
+    if len(nested) != EXPECTED_NESTED_CHILD_COUNT:
         return _verdict(
             STATUS_FAIL_PRODUCER,
             [
                 "healthy evidence with exactly one formal outer child "
-                f"({outer_thread_id!r}), but the outer child produced no "
-                f"formal direct nested {rules['formal_tool']} child; full-mode "
-                "Step 3 was not delegated"
+                f"({outer_thread_id!r}), but the outer child produced "
+                f"{len(nested)} formal direct nested {rules['formal_tool']} "
+                f"children; full-mode Step 3 requires exactly "
+                f"{EXPECTED_NESTED_CHILD_COUNT} delegated children"
             ],
             root_thread_id=root_thread_id,
             root_direct_child_count=1,
             outer_thread_id=outer_thread_id,
+            nested_child_thread_ids=nested,
             formal_spawn_relation_count=edge_count,
             eval_version=version,
             contract_id=contract["contract_id"],

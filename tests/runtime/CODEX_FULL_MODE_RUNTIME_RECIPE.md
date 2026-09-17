@@ -114,6 +114,14 @@ eval runtime provenance。
 
 ## 4. Exclusive run root / provenance
 
+正式 acceptance 的 canonical fixture、capability/topology verifier 与
+deterministic suite 都直接从本地 `$PRODUCER_REPO` checkout 读取/执行，所以
+producer worktree 自身的 tracked + untracked 干净状态是 `FINAL_HEAD_SHA`
+provenance 的必要条件。创建 run root 之后、消费任何 producer-owned
+fixture/verifier 之前机械记录该状态；producer checkout dirty 时只能
+`BLOCKED / NOT TESTED`，不得继续 capability probe / formal runtime
+acceptance。
+
 ```bash
 set -euo pipefail
 
@@ -127,6 +135,19 @@ RUN_ROOT="$(mktemp -d /tmp/paper-analysis-full-leaf.XXXXXX)"
 mkdir -p "$RUN_ROOT/config" "$RUN_ROOT/output" "$RUN_ROOT/consumer"
 export RUN_ROOT
 export CONSUMER="$RUN_ROOT/consumer"
+
+PRODUCER_DIRTY="$(git -C "$PRODUCER_REPO" status --porcelain)"
+if [ -n "$PRODUCER_DIRTY" ]; then
+  printf '%s\n' 'producer_repo_dirty=yes' \
+    >"$RUN_ROOT/output/producer-repo-dirty.txt"
+  printf '%s\n' "$PRODUCER_DIRTY" \
+    >"$RUN_ROOT/output/producer-repo-status.txt"
+  echo 'producer checkout dirty -> BLOCKED / NOT TESTED'
+  exit 1
+fi
+printf '%s\n' 'producer_repo_dirty=no' \
+  >"$RUN_ROOT/output/producer-repo-dirty.txt"
+
 RECIPE_RUN_ID="$(basename "$RUN_ROOT")"
 
 git -C "$CONSUMER" init -q
@@ -737,6 +758,7 @@ JSON/JSONL、YAML/TOML 的正式判断使用结构化 parser（`jq` / `yq` /
 
 ```text
 output/producer-sha.txt
+output/producer-repo-dirty.txt
 output/fixture-repo-sha.txt
 output/fixture-repo-dirty.txt
 output/recipe-run-id.txt
@@ -772,7 +794,8 @@ output/git-diff-check.txt
 ```
 
 完整 raw response 保留在本次 `/tmp` run root；PR 只贴足以证明结论的最小
-脱敏 machine evidence。不要求 `adapter.json`，因为 shared adapter 不属于
+脱敏 machine evidence。`output/producer-repo-status.txt` 仅 producer
+checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared adapter 不属于
 本 case 的 merge verdict 链。corrected probe 的 child turn 中全部 raw
 `custom_tool_call` / `custom_tool_call_output` 与 formal collab events 随
 完整 raw response 原样保留；child 是否通过 Code Mode 查询过 `ALL_TOOLS`
@@ -787,6 +810,8 @@ output/git-diff-check.txt
 - clean consumer 为本次新建，来源为显式 Git dependency；
 - lock `resolved_commit == FINAL_HEAD_SHA`；
 - fixture repo exact SHA 且 dirty=no；
+- producer checkout tracked + untracked 干净，`output/producer-repo-dirty.txt`
+  为 `producer_repo_dirty=no`；
 - `manual_patch=no`；
 - clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
 - generated Codex projection 保留全部六条 exact behavior markers（含
@@ -843,6 +868,7 @@ contradiction 均不改变上述 topology verdict。**
   acceptance 在 capability probe 完成之前尚未开始，未 probe 的 run 无资格
   产生本 verdict；
 - `/eval` healthy；
+- producer checkout 干净（`producer_repo_dirty=no`）；
 - 固定 input 正常；
 - clean-consumer purity preflight 已通过（consumer 无 test-only artifact
   污染）；
@@ -867,6 +893,16 @@ contradiction 均不改变上述 topology verdict。**
 - root 出现多个不同 formal direct children，固定 outer dispatch 无法唯一
   归属；
 - clean consumer/provenance 不成立；
+- producer checkout dirty（tracked 或 untracked 修改未提交）：
+  **`BLOCKED / NOT TESTED`**，停止，不继续 capability probe / formal
+  runtime acceptance。记录格式：
+
+  ```text
+  BLOCKED / NOT TESTED
+  reason: producer checkout dirty; producer-owned fixture/verifier
+  provenance to FINAL_HEAD_SHA not established
+  ```
+
 - clean-consumer purity preflight 失败：安装树存在 test-only artifacts
   （NOT TESTED）；
 - **`BLOCKED / NOT YET ATTRIBUTABLE`**：在 PA-CODEX-NESTED-CAP-00 完成

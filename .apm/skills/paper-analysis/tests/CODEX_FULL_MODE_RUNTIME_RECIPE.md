@@ -152,10 +152,12 @@ test -f "$CONSUMER/.codex/agents/paper-analysis.toml"
 test -f "$CONSUMER/.agents/skills/paper-analysis/tests/fixtures/paper.txt"
 ```
 
-用 `yq` 证明 lock 确实 pin 到 final Git commit：
+用 `yq` 证明 lock 确实 pin 到 final Git commit（APM 0.29 lockfile 把
+`repo_url` 归一化为小写 `owner/repo`，原始大小写保留在
+`materialization_repo_url`，主机在 `host` 字段）：
 
 ```bash
-yq -e '.dependencies[] | select(.resolved_commit == strenv(FINAL_HEAD_SHA)) | select(.repo_url == "https://github.com/ScholarWorkflow/paper-analysis" or .repo_url == "https://github.com/ScholarWorkflow/paper-analysis.git")' \
+yq -e '.dependencies[] | select(.resolved_commit == strenv(FINAL_HEAD_SHA)) | select(.host == "github.com" and .materialization_repo_url == "ScholarWorkflow/paper-analysis")' \
   "$CONSUMER/apm.lock.yaml" >/dev/null
 cp "$CONSUMER/apm.lock.yaml" "$RUN_ROOT/output/apm.lock.yaml"
 ```

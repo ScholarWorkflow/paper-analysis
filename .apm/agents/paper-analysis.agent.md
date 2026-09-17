@@ -37,6 +37,7 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 
 - `paper-analysis` 是 specialized coordinator child：由调用方按 exact name 启动，负责同一篇论文的完整 workflow；它不是 generic leaf，也不承担无关任务。
 - **Codex full Step 3 必须使用运行时原生 subagent delegation**：`mode: full` 到达 Step 3 后，必须通过当前运行时提供的原生 subagent delegation workflow 分派三个有界只读分析工作单元，不硬编码任何未公开或版本私有的 Codex tool/function schema 名，也不把 OpenCode 专属的 `task` 字段当作 Codex 接口。
+- **Codex Step 3 delegation 先发现后分派**：`mode: full` 到达 Step 3 后，在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode / programmatic tool-calling surface 发现实际可调用的原生 multi-agent delegation 工具；discovery 只使用运行时自身提供的工具目录/搜索 surface，不硬编码版本私有的 spawn JSON schema 或固定 namespace 名。Code Mode `exec` 作为 programmatic tool caller 是允许的；`exec_command` shell、curl、另起 `/eval` 都不是 delegation fallback。原生 delegation 工具无法发现或不可调用时，明确返回 delegation-capability failure，不得 inline 自己完成三路分析。
 - **coordinator 不得 inline 执行三路分析来替代 delegation**：三路分析结果必须全部来自 delegated child 返回；全部返回后 coordinator 才执行 Step 4 组装。OpenCode 运行时继续保留其原生 `task` / `permission` / `question` contract，本条不改变 OpenCode 行为。
 - 运行时提供原生 `question` 工具（如 OpenCode）时，必须优先使用原生 `question` 获取用户输入，下列 fallback 不得覆盖它。
 - 运行时没有 `question` 工具时（如 Codex），缺 `paper`、缺 `save`/`patch_analysis`、缺可定位 PDF 或缺 OCR 授权等必要用户输入时，不得静默选择默认值：必须 yield 一个明确的 `needs_input` 状态，至少包含 ①缺哪个字段/授权 ②要向用户提出的问题 ③明确要求 parent 在获得答案后 resume 同一 coordinator 线程继续，而不是结束本 coordinator 后新开 generic child。
@@ -247,7 +248,7 @@ Title / 作者 / 期刊·会议 / 年份 / DOI / 本地 PDF 路径(有则)
 
 ### Step 3 — 并行子代理（Spawn 拓扑 · 拆 3 方向）
 
-将全文放入临时文件后，Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元，分别对应表中的三路语义角色；三路结果必须全部来自 delegated child，coordinator 不得 inline 完成或降级为 best-effort。直接使用当前运行时提供的原生 subagent delegation workflow（OpenCode 即原生 `task`），不硬编码 Codex 版本私有的 tool/function schema。每个工作单元只接收全文路径、角色和产出要求，直接返回 Markdown，不修改文件。
+将全文放入临时文件后，Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元，分别对应表中的三路语义角色；三路结果必须全部来自 delegated child，coordinator 不得 inline 完成或降级为 best-effort。分派是硬门槛：在任何三路分析内容开始前，先完成 delegation capability discovery——通过当前 Codex 运行时的 Code Mode / programmatic tool-calling surface 查询运行时自身提供的工具目录/搜索 surface，确认原生 multi-agent delegation 工具实际存在且可调用；discovery 失败或工具不可调用时明确返回 delegation-capability failure，绝不 inline 完成三路分析，也不用 shell、curl 或另起 `/eval` 冒充 delegation。发现成功后创建 exactly 3 个有界只读分析工作单元并等待三路全部返回，才进入 Step 4。直接使用当前运行时提供的原生 subagent delegation workflow（OpenCode 即原生 `task`），不硬编码 Codex 版本私有的 tool/function schema 名。每个工作单元只接收全文路径、角色和产出要求，直接返回 Markdown，不修改文件。
 
 | 子代理 | 方向 | 产出（返回的 Markdown） |
 |---|---|---|

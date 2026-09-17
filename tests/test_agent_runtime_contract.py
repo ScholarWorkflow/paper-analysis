@@ -50,6 +50,18 @@ REQUIRED_ORCHESTRATION_CONVENTIONS = (
      "coordinator 不得 inline 执行三路分析来替代 delegation"),
     ("codex full step3 exactly three delegated units",
      "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元"),
+    ("codex step3 discovery before analysis",
+     "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode "
+     "/ programmatic tool-calling surface 发现实际可调用的原生 multi-agent "
+     "delegation 工具"),
+    ("codex step3 discovery uses runtime catalog not namespace",
+     "不硬编码版本私有的 spawn JSON schema 或固定 namespace 名"),
+    ("codex step3 exec is programmatic caller",
+     "Code Mode `exec` 作为 programmatic tool caller 是允许的"),
+    ("codex step3 no shell curl eval fallback",
+     "`exec_command` shell、curl、另起 `/eval` 都不是 delegation fallback"),
+    ("codex step3 discovery failure explicit",
+     "明确返回 delegation-capability failure"),
     ("native question priority", "必须优先使用原生 `question`"),
     ("needs_input no silent default", "不得静默选择默认值"),
     ("needs_input same-thread resume", "resume 同一 coordinator"),
@@ -64,6 +76,21 @@ CODEX_FULL_DELEGATION_MARKERS = (
     "Codex full Step 3 必须使用运行时原生 subagent delegation",
     "coordinator 不得 inline 执行三路分析来替代 delegation",
     "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
+)
+
+# Delegation-discovery contract (run-5 attribution): on Codex, the V1
+# multi-agent surface is reachable through the programmatic tool-calling
+# surface, so Step 3 must discover the native delegation tool before any
+# analysis content, must not substitute shell/curl//eval for it, and must
+# fail explicitly instead of inlining when discovery fails.
+CODEX_STEP3_DISCOVERY_MARKERS = (
+    "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode "
+    "/ programmatic tool-calling surface 发现实际可调用的原生 multi-agent "
+    "delegation 工具",
+    "不硬编码版本私有的 spawn JSON schema 或固定 namespace 名",
+    "Code Mode `exec` 作为 programmatic tool caller 是允许的",
+    "`exec_command` shell、curl、另起 `/eval` 都不是 delegation fallback",
+    "明确返回 delegation-capability failure",
 )
 
 # The three full-mode Step 3 semantic roles must survive unchanged; the Codex
@@ -383,6 +410,39 @@ class AgentRuntimeContractTests(unittest.TestCase):
         )
         with self.assertRaises(AssertionError):
             assert_orchestration_contract(generic)
+
+    def test_codex_step3_discovery_markers_are_gated_conventions(self):
+        gated_markers = {marker for _, marker in REQUIRED_ORCHESTRATION_CONVENTIONS}
+        for marker in CODEX_STEP3_DISCOVERY_MARKERS:
+            self.assertIn(marker, gated_markers)
+        assert_orchestration_contract(AGENT.read_text(encoding="utf-8"))
+
+    def test_codex_step3_discovery_precedes_analysis(self):
+        text = AGENT.read_text(encoding="utf-8")
+        step3 = text.split("### Step 3 — 并行子代理", 1)[1].split("### Step 4", 1)[0]
+        self.assertIn("在任何三路分析内容开始前", step3)
+        self.assertIn("delegation capability discovery", step3)
+        self.assertIn("确认原生 multi-agent delegation 工具实际存在且可调用", step3)
+        self.assertIn("delegation-capability failure", step3)
+        self.assertIn("绝不 inline 完成三路分析", step3)
+        self.assertIn("也不用 shell、curl 或另起 `/eval` 冒充 delegation", step3)
+        discovery_order = (
+            step3.index("在任何三路分析内容开始前"),
+            step3.index("delegation capability discovery"),
+            step3.index("确认原生 multi-agent delegation 工具实际存在且可调用"),
+        )
+        self.assertEqual(
+            list(discovery_order), sorted(discovery_order),
+            "discovery wording must read as a precondition, in order",
+        )
+
+    def test_discovery_contract_does_not_hardcode_measured_tool_surface(self):
+        """The runtime contract must name the discovery surface, not the
+        version-private tool names observed in a characterization run."""
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertNotIn("multi_agent_v1__", text)
+        self.assertNotIn("ALL_TOOLS", text)
+        self.assertNotIn("spawn_agent(", text)
 
 
 if __name__ == "__main__":

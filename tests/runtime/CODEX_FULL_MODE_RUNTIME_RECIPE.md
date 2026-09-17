@@ -251,6 +251,9 @@ required = {
     "full_delegation_required": "Codex full Step 3 必须使用运行时原生 subagent delegation",
     "no_inline_replacement": "coordinator 不得 inline 执行三路分析来替代 delegation",
     "exactly_three_delegated_units": "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
+    "discovery_before_analysis": "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode / programmatic tool-calling surface 发现实际可调用的原生 multi-agent delegation 工具",
+    "no_shell_curl_eval_fallback": "`exec_command` shell、curl、另起 `/eval` 都不是 delegation fallback",
+    "discovery_failure_explicit": "明确返回 delegation-capability failure",
 }
 checks = {key: marker in instructions for key, marker in required.items()}
 assert all(checks.values())
@@ -786,8 +789,9 @@ output/git-diff-check.txt
 - fixture repo exact SHA 且 dirty=no；
 - `manual_patch=no`；
 - clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
-- generated Codex projection 保留全部三条 exact behavior markers（含
-  exactly-3 delegated units 指令），丢任一条即 `FAIL_PRODUCER`；
+- generated Codex projection 保留全部六条 exact behavior markers（含
+  delegation discovery 与 exactly-3 delegated units 指令），丢任一条即
+  `FAIL_PRODUCER`；
 - PA-CODEX-NESTED-CAP-00 已完成且 `depth_hypothesis` 为
   `CONFIRMED_BY_A_B`（正式 eval request 含 `--config agents.max_depth=2`，
   `output/nested-capability-decision.txt` 在案）或 `REFUTED_BY_DEFAULT`

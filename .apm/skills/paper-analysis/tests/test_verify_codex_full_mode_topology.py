@@ -363,6 +363,13 @@ def test_invalid_malformed_event_shapes() -> None:
     assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, "events not a list"
 
 
+def test_invalid_missing_or_malformed_message_envelopes() -> None:
+    for malformed in ({}, {"message": None}, {"message": "not-object"}):
+        response = eval_response([*healthy_events(), malformed])
+        verdict = verify_topology(response, contract())
+        assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, malformed
+
+
 def test_invalid_malformed_dispatch_envelopes_fail_closed() -> None:
     """Recognized dispatch methods must carry an object at the contract item path."""
 

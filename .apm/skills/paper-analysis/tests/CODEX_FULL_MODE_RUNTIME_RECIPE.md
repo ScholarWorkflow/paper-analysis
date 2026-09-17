@@ -350,9 +350,10 @@ verifier 必须执行：
    `==1` → 得到 `outer_thread_id`；
 7. 查 sender 为 `outer_thread_id` 的 formal nested children：`>=1` →
    topology threshold 满足；`0` → `FAIL_PRODUCER`；
-8. formal ownership/malformed evidence 冲突（completed spawn 无 concrete
-   receiver、relation shape 损坏、同一 child 被不同 sender claim、
-   contract 未声明 formal spawn 规则）→ `INVALID_EVIDENCE`。
+8. formal ownership/malformed evidence 冲突（`app_server_events` entry 或
+   `message` wrapper 缺失/非 object、completed spawn 无 concrete receiver、
+   relation shape 损坏、同一 child 被不同 sender claim、contract 未声明
+   formal spawn 规则）→ `INVALID_EVIDENCE`。
 
 **verifier 不得读取 `child_thread_reads` 或任何 identity 字段**；prompt
 文本、assistant/model 自述、`subAgentActivity.agentPath` 均不得创建、修改

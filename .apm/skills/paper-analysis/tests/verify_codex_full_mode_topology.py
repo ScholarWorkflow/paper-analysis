@@ -202,6 +202,7 @@ def _formal_edges(
             continue
         message = event.get("message")
         if not isinstance(message, dict):
+            problems.append(f"app_server_events[{index}].message must be an object")
             continue
         method = message.get("method")
         if method not in rules["methods"]:

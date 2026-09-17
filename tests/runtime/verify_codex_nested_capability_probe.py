@@ -109,6 +109,8 @@ def _tool_surface_diagnostics(events: object) -> dict:
         if isinstance(name, str) and name and name not in record["custom_tool_names"]:
             record["custom_tool_names"].append(name)
         action = item.get("action")
+        if not isinstance(action, str):
+            action = item.get("input")
         if isinstance(action, str) and "ALL_TOOLS" in action:
             record["queried_all_tools"] = True
     for record in surface.values():

@@ -78,11 +78,15 @@ def eval_response(events: list[dict] | None = None) -> dict:
 
 def custom_tool_call(thread: str, name: str, action: str) -> dict:
     """Code Mode programmatic tool-calling item (the runtime's native
-    multi-agent invocation surface); diagnostics only, never formal."""
+    multi-agent invocation surface); diagnostics only, never formal.
+
+    The runtime records the program text in ``input``; ``action`` is kept as
+    an alternative spelling for robustness.
+    """
 
     return event(
         "rawResponseItem/completed",
-        {"type": "custom_tool_call", "name": name, "status": "completed", "action": action},
+        {"type": "custom_tool_call", "name": name, "status": "completed", "input": action},
         thread_id=thread,
     )
 

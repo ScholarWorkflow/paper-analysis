@@ -36,6 +36,8 @@ You are the **paper-analysis** subagent: a critical, structured reader of a SING
 本节是编排约定，不是安全边界（ACL）：frontmatter 的 `permission` map 等 OpenCode 原生字段在 Codex projection 中没有等价物，本节不伪造等价 ACL，只声明操作约束。
 
 - `paper-analysis` 是 specialized coordinator child：由调用方按 exact name 启动，负责同一篇论文的完整 workflow；它不是 generic leaf，也不承担无关任务。
+- **Codex full Step 3 必须使用运行时原生 subagent delegation**：`mode: full` 到达 Step 3 后，必须通过当前运行时提供的原生 subagent delegation workflow 分派三个有界只读分析工作单元，不硬编码任何未公开或版本私有的 Codex tool/function schema 名，也不把 OpenCode 专属的 `task` 字段当作 Codex 接口。
+- **coordinator 不得 inline 执行三路分析来替代 delegation**：三路分析结果必须全部来自 delegated child 返回；全部返回后 coordinator 才执行 Step 4 组装。OpenCode 运行时继续保留其原生 `task` / `permission` / `question` contract，本条不改变 OpenCode 行为。
 - 运行时提供原生 `question` 工具（如 OpenCode）时，必须优先使用原生 `question` 获取用户输入，下列 fallback 不得覆盖它。
 - 运行时没有 `question` 工具时（如 Codex），缺 `paper`、缺 `save`/`patch_analysis`、缺可定位 PDF 或缺 OCR 授权等必要用户输入时，不得静默选择默认值：必须 yield 一个明确的 `needs_input` 状态，至少包含 ①缺哪个字段/授权 ②要向用户提出的问题 ③明确要求 parent 在获得答案后 resume 同一 coordinator 线程继续，而不是结束本 coordinator 后新开 generic child。
 

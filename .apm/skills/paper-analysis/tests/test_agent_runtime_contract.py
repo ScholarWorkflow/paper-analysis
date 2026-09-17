@@ -44,11 +44,29 @@ REQUIRED_ORCHESTRATION_CONVENTIONS = (
     ("no-recursion", "不要加载 `paper-analysis` skill"),
     ("full leaf no-child-spawn", "不再分派子工作"),
     ("gap-only no full leaves", "绝不进入 Step 3 或 spawn"),
+    ("codex full step3 native delegation",
+     "Codex full Step 3 必须使用运行时原生 subagent delegation"),
+    ("codex full step3 no inline replacement",
+     "coordinator 不得 inline 执行三路分析来替代 delegation"),
     ("native question priority", "必须优先使用原生 `question`"),
     ("needs_input no silent default", "不得静默选择默认值"),
     ("needs_input same-thread resume", "resume 同一 coordinator"),
     ("convention not security boundary", "不是安全边界"),
 )
+
+# The two load-bearing Codex full-mode Step 3 delegation markers (issue #13).
+# They are duplicated here as standalone constants so the dedicated tests name
+# them exactly; the mutation gate below keeps each one individually load
+# bearing.
+CODEX_FULL_DELEGATION_MARKERS = (
+    "Codex full Step 3 必须使用运行时原生 subagent delegation",
+    "coordinator 不得 inline 执行三路分析来替代 delegation",
+)
+
+# The three full-mode Step 3 semantic roles must survive unchanged; the Codex
+# delegation contract changes the dispatch mechanism, never the business
+# structure.
+FULL_MODE_STEP3_SEMANTIC_ROLES = ("内容沉淀", "贡献与批判", "帮助评估")
 
 
 def assert_orchestration_contract(agent_text: str) -> None:
@@ -313,6 +331,48 @@ class AgentRuntimeContractTests(unittest.TestCase):
     def test_convention_gate_is_not_vacuous(self):
         with self.assertRaises(AssertionError):
             assert_orchestration_contract("")
+
+    def test_full_mode_step3_keeps_three_semantic_roles(self):
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertIn("### Step 3 — 并行子代理", text)
+        step3 = text.split("### Step 3 — 并行子代理", 1)[1].split("### Step 4", 1)[0]
+        for role in FULL_MODE_STEP3_SEMANTIC_ROLES:
+            self.assertIn(role, step3)
+
+    def test_codex_full_delegation_markers_are_gated_conventions(self):
+        gated_markers = {marker for _, marker in REQUIRED_ORCHESTRATION_CONVENTIONS}
+        for marker in CODEX_FULL_DELEGATION_MARKERS:
+            self.assertIn(marker, gated_markers)
+        assert_orchestration_contract(AGENT.read_text(encoding="utf-8"))
+
+    def test_codex_full_delegation_markers_are_load_bearing(self):
+        """Mutation-style check: deleting either exact marker line must fail the gate."""
+        text = AGENT.read_text(encoding="utf-8")
+        for marker in CODEX_FULL_DELEGATION_MARKERS:
+            with self.subTest(marker=marker):
+                marker_lines = [line for line in text.splitlines() if marker in line]
+                self.assertEqual(len(marker_lines), 1, marker)
+                mutated = "\n".join(
+                    line for line in text.splitlines() if marker not in line
+                )
+                self.assertNotIn(marker, mutated)
+                with self.assertRaises(AssertionError):
+                    assert_orchestration_contract(mutated)
+
+    def test_codex_delegation_wording_does_not_use_opencode_task_as_codex_api(self):
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertNotIn("task(", text)
+        for marker in CODEX_FULL_DELEGATION_MARKERS:
+            marker_line = next(line for line in text.splitlines() if marker in line)
+            self.assertNotIn("Task", marker_line, marker)
+
+    def test_delegation_gate_rejects_generic_subagent_wording(self):
+        generic = (
+            "Step 3 使用 subagent delegation 分派三路分析，"
+            "运行时提供原生 delegation workflow 时必须使用它。"
+        )
+        with self.assertRaises(AssertionError):
+            assert_orchestration_contract(generic)
 
 
 if __name__ == "__main__":

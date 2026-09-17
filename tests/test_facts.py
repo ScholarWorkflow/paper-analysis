@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).resolve().parents[1] / ".apm/skills/paper-analysis"
 SCRIPT = ROOT / "scripts/facts.py"
 SPEC = importlib.util.spec_from_file_location("facts", SCRIPT)
 facts = importlib.util.module_from_spec(SPEC)

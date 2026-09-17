@@ -8,4 +8,7 @@ dependencies = ["scholar-workflow-pdfx>=0.1.0,<0.2"]
 dev = ["pytest>=8.3,<9"]
 
 [tool.pytest.ini_options]
-testpaths = [".apm/skills/paper-analysis/tests"]
+testpaths = ["tests"]
+# tests/runtime/ hosts the PA-CODEX-FULL-LEAF-01 topology verifier; it ships
+# with the producer repo only and must never re-enter the packaged skill tree.
+pythonpath = ["tests/runtime"]

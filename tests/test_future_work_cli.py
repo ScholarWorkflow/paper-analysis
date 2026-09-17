@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 
-SKILL_ROOT = Path(__file__).parents[1]
+SKILL_ROOT = Path(__file__).resolve().parents[1] / ".apm/skills/paper-analysis"
 SCRIPT = SKILL_ROOT / "scripts/future_work.py"
 FIXTURES = Path(__file__).parent / "fixtures"
 

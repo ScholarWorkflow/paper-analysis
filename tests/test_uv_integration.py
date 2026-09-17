@@ -4,7 +4,7 @@ import subprocess
 from pathlib import Path
 
 
-ROOT = Path(__file__).parents[4]
+ROOT = Path(__file__).resolve().parents[1]
 FUTURE_WORK_SCRIPT = ROOT / ".apm/skills/paper-analysis/scripts/future_work.py"
 PDF_RUNTIME_SCRIPT = ROOT / ".apm/skills/paper-analysis/scripts/pdf_runtime.py"
 

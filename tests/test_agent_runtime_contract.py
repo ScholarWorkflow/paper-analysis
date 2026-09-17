@@ -2,8 +2,8 @@ import unittest
 from pathlib import Path
 
 
-SKILL_ROOT = Path(__file__).parents[1]
-REPO_ROOT = Path(__file__).parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SKILL_ROOT = REPO_ROOT / ".apm/skills/paper-analysis"
 AGENT = REPO_ROOT / ".apm/agents/paper-analysis.agent.md"
 SKILL = SKILL_ROOT / "SKILL.md"
 APM_YML = REPO_ROOT / "apm.yml"
@@ -44,11 +44,59 @@ REQUIRED_ORCHESTRATION_CONVENTIONS = (
     ("no-recursion", "不要加载 `paper-analysis` skill"),
     ("full leaf no-child-spawn", "不再分派子工作"),
     ("gap-only no full leaves", "绝不进入 Step 3 或 spawn"),
+    ("codex full step3 native delegation",
+     "Codex full Step 3 必须使用运行时原生 subagent delegation"),
+    ("codex full step3 no inline replacement",
+     "coordinator 不得 inline 执行三路分析来替代 delegation"),
+    ("codex full step3 exactly three delegated units",
+     "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元"),
+    ("codex step3 discovery before analysis",
+     "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode "
+     "/ programmatic tool-calling surface 发现实际可调用的原生 multi-agent "
+     "delegation 工具"),
+    ("codex step3 discovery uses runtime catalog not namespace",
+     "不硬编码版本私有的 spawn JSON schema 或固定 namespace 名"),
+    ("codex step3 exec is programmatic caller",
+     "Code Mode `exec` 作为 programmatic tool caller 是允许的"),
+    ("codex step3 no shell curl eval fallback",
+     "`exec_command` shell、curl、另起 `/eval` 都不是 delegation fallback"),
+    ("codex step3 discovery failure explicit",
+     "明确返回 delegation-capability failure"),
     ("native question priority", "必须优先使用原生 `question`"),
     ("needs_input no silent default", "不得静默选择默认值"),
     ("needs_input same-thread resume", "resume 同一 coordinator"),
     ("convention not security boundary", "不是安全边界"),
 )
+
+# The two load-bearing Codex full-mode Step 3 delegation markers (issue #13).
+# They are duplicated here as standalone constants so the dedicated tests name
+# them exactly; the mutation gate below keeps each one individually load
+# bearing.
+CODEX_FULL_DELEGATION_MARKERS = (
+    "Codex full Step 3 必须使用运行时原生 subagent delegation",
+    "coordinator 不得 inline 执行三路分析来替代 delegation",
+    "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
+)
+
+# Delegation-discovery contract (run-5 attribution): on Codex, the V1
+# multi-agent surface is reachable through the programmatic tool-calling
+# surface, so Step 3 must discover the native delegation tool before any
+# analysis content, must not substitute shell/curl//eval for it, and must
+# fail explicitly instead of inlining when discovery fails.
+CODEX_STEP3_DISCOVERY_MARKERS = (
+    "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode "
+    "/ programmatic tool-calling surface 发现实际可调用的原生 multi-agent "
+    "delegation 工具",
+    "不硬编码版本私有的 spawn JSON schema 或固定 namespace 名",
+    "Code Mode `exec` 作为 programmatic tool caller 是允许的",
+    "`exec_command` shell、curl、另起 `/eval` 都不是 delegation fallback",
+    "明确返回 delegation-capability failure",
+)
+
+# The three full-mode Step 3 semantic roles must survive unchanged; the Codex
+# delegation contract changes the dispatch mechanism, never the business
+# structure.
+FULL_MODE_STEP3_SEMANTIC_ROLES = ("内容沉淀", "贡献与批判", "帮助评估")
 
 
 def assert_orchestration_contract(agent_text: str) -> None:
@@ -313,6 +361,88 @@ class AgentRuntimeContractTests(unittest.TestCase):
     def test_convention_gate_is_not_vacuous(self):
         with self.assertRaises(AssertionError):
             assert_orchestration_contract("")
+
+    def test_full_mode_step3_keeps_three_semantic_roles(self):
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertIn("### Step 3 — 并行子代理", text)
+        step3 = text.split("### Step 3 — 并行子代理", 1)[1].split("### Step 4", 1)[0]
+        for role in FULL_MODE_STEP3_SEMANTIC_ROLES:
+            self.assertIn(role, step3)
+
+    def test_codex_full_delegation_markers_are_gated_conventions(self):
+        gated_markers = {marker for _, marker in REQUIRED_ORCHESTRATION_CONVENTIONS}
+        for marker in CODEX_FULL_DELEGATION_MARKERS:
+            self.assertIn(marker, gated_markers)
+        assert_orchestration_contract(AGENT.read_text(encoding="utf-8"))
+
+    def test_codex_full_delegation_markers_are_load_bearing(self):
+        """Mutation-style check: deleting either exact marker line must fail the gate."""
+        text = AGENT.read_text(encoding="utf-8")
+        for marker in CODEX_FULL_DELEGATION_MARKERS:
+            with self.subTest(marker=marker):
+                marker_lines = [line for line in text.splitlines() if marker in line]
+                self.assertEqual(len(marker_lines), 1, marker)
+                mutated = "\n".join(
+                    line for line in text.splitlines() if marker not in line
+                )
+                self.assertNotIn(marker, mutated)
+                with self.assertRaises(AssertionError):
+                    assert_orchestration_contract(mutated)
+
+    def test_codex_delegation_wording_does_not_use_opencode_task_as_codex_api(self):
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertNotIn("task(", text)
+        for marker in CODEX_FULL_DELEGATION_MARKERS:
+            marker_line = next(line for line in text.splitlines() if marker in line)
+            self.assertNotIn("Task", marker_line, marker)
+
+    def test_codex_full_step3_requires_three_children_and_child_owned_results(self):
+        text = AGENT.read_text(encoding="utf-8")
+        step3 = text.split("### Step 3 — 并行子代理", 1)[1].split("### Step 4", 1)[0]
+        self.assertIn("Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元", step3)
+        self.assertIn("三路结果必须全部来自 delegated child", step3)
+        self.assertNotIn("至少", step3)
+
+    def test_delegation_gate_rejects_generic_subagent_wording(self):
+        generic = (
+            "Step 3 使用 subagent delegation 分派三路分析，"
+            "运行时提供原生 delegation workflow 时必须使用它。"
+        )
+        with self.assertRaises(AssertionError):
+            assert_orchestration_contract(generic)
+
+    def test_codex_step3_discovery_markers_are_gated_conventions(self):
+        gated_markers = {marker for _, marker in REQUIRED_ORCHESTRATION_CONVENTIONS}
+        for marker in CODEX_STEP3_DISCOVERY_MARKERS:
+            self.assertIn(marker, gated_markers)
+        assert_orchestration_contract(AGENT.read_text(encoding="utf-8"))
+
+    def test_codex_step3_discovery_precedes_analysis(self):
+        text = AGENT.read_text(encoding="utf-8")
+        step3 = text.split("### Step 3 — 并行子代理", 1)[1].split("### Step 4", 1)[0]
+        self.assertIn("在任何三路分析内容开始前", step3)
+        self.assertIn("delegation capability discovery", step3)
+        self.assertIn("确认原生 multi-agent delegation 工具实际存在且可调用", step3)
+        self.assertIn("delegation-capability failure", step3)
+        self.assertIn("绝不 inline 完成三路分析", step3)
+        self.assertIn("也不用 shell、curl 或另起 `/eval` 冒充 delegation", step3)
+        discovery_order = (
+            step3.index("在任何三路分析内容开始前"),
+            step3.index("delegation capability discovery"),
+            step3.index("确认原生 multi-agent delegation 工具实际存在且可调用"),
+        )
+        self.assertEqual(
+            list(discovery_order), sorted(discovery_order),
+            "discovery wording must read as a precondition, in order",
+        )
+
+    def test_discovery_contract_does_not_hardcode_measured_tool_surface(self):
+        """The runtime contract must name the discovery surface, not the
+        version-private tool names observed in a characterization run."""
+        text = AGENT.read_text(encoding="utf-8")
+        self.assertNotIn("multi_agent_v1__", text)
+        self.assertNotIn("ALL_TOOLS", text)
+        self.assertNotIn("spawn_agent(", text)
 
 
 if __name__ == "__main__":

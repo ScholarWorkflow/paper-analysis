@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).resolve().parents[1] / ".apm/skills/paper-analysis"
 SCRIPT = ROOT / "scripts/paper_input.py"
 FIXTURES = Path(__file__).parent / "fixtures"
 SPEC = importlib.util.spec_from_file_location("paper_input", SCRIPT)

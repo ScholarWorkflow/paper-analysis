@@ -1,12 +1,18 @@
 # Codex Full-Mode Runtime Recipe — `PA-CODEX-FULL-LEAF-01`
 
-Producer-owned acceptance recipe for issue #13. It proves, on a clean
-consumer and the real `mode: full` entry path, that the unique formal outer
-child spawns exactly three native nested subagent delegation children at Step 3
-instead of inlining the three-way analysis.
+Producer-owned acceptance recipe for the Codex full-mode nested delegation
+topology. It proves, on a clean consumer and the real `mode: full` entry path,
+that the unique formal outer child delegates three native subagent children at
+Step 3 instead of inlining the three-way analysis.
 
 本文件是 producer 仓库内的正式 Test Recipe：执行者按本文逐步操作，不依赖
 issue 文本；issue 只描述目标，本文描述可执行步骤与判定。
+
+Contract authority：issue #16 的 `Frozen Acceptance Contract`
+（`PA-DIRECT-01..06`）是本 case 当前的验收来源。issue #13 / PR #14 只保留
+问题与实现的历史 provenance；#15 的重复 runtime smoke 与 blanket SHA
+invalidation 设计不再生效。旧 `PA-CODEX-NESTED-CAP-00` V1 capability
+characterization 不再是本 case 的前置，其历史证据留在 #13 / #14。
 
 Identity 边界（本 recipe 的 hard boundary）：runtime agent identity /
 `agent_type` 永远不是本 case 的 PASS / FAIL / BLOCKED 条件。本 case 只验
@@ -36,7 +42,12 @@ runtime agent identity。
   - 三个 leaf 的内容质量或必须同时存在 3 个 live child；
   - OCR/future-work/facts 质量；
   - `professor-contact` 集成质量；
-  - OpenCode runtime compatibility。
+  - OpenCode runtime compatibility；
+  - child 语义结果是否已被 coordinator 消费（wait→consume 由
+    `PA-DIRECT-DET-01` 的 producer contract assertions 负责）；
+  - delegation blocker 归因（`PA-DIRECT-03` 的 zero-attempt 禁止与
+    machine-level failure 前置由 `PA-DIRECT-DET-01` 负责；本 case 不注入
+    synthetic failure，也不新增第二个 runtime case）。
 
 业务结构不变：full Step 3 三路 semantic roles
 （① 内容沉淀；② 贡献与批判；③ 帮助评估）由 deterministic producer test
@@ -59,6 +70,7 @@ skills-test-fixtures/codex-eval-adapter@9
 /eval top-level passed/version
 output.thread_id
 output.app_server_events
+output.thread_start_effective（仅 §8 resolved-config 记录）
 pinned contract 中 formal spawnAgent relation 规则
 ```
 
@@ -71,13 +83,16 @@ dispatch.agent_identity
 requested_role / loaded_identity / effective_role
 agent_type / agentRole / agentPath
 模型文本中的 agent 名称
+tool catalog / Code Mode / assistant prose（不得进入任何 verdict）
 ```
 
 说明：pinned @9 contract 仍是 formal topology field/rule 的共享事实来源
 （`app_server_event_envelope`、`raw_identity_path.formal_spawn_relation`、
 `delegation.fail_closed`）；本 producer verifier 直接消费 raw
 `/eval` 结构化事件，不让 shared adapter 的 identity-conflict 实现进入
-merge verdict 链。
+merge verdict 链。@9 的 delegation 维度只有 `confirmed` / `unobservable`，
+**没有** native-spawn-failure machine state；因此本 Recipe 不发明 external
+delegation-failure gate，也不为它构造 synthetic case（issue #16 §4）。
 
 版本语义：
 
@@ -105,8 +120,12 @@ export EVAL_SERVER_DIR=/absolute/path/to/eval-server
 - 不直接 shell 执行 `codex`；
 - consumer 在 producer repo / worktrees 外；
 - 无 local path / symlink / editable / copied artifact / manual patch；
-- producer SHA 或 fixture SHA 变化后旧 acceptance evidence 失效，重建
-  consumer 重跑。
+- runtime prerequisite config 固定为 §8 的 `agents.enabled=true` 与
+  `agents.max_concurrent_threads_per_session=4`，执行前已确定，不在观察到
+  不理想结果后修改。
+
+revision 变化不自动触发整案重跑：是否复用旧 PASS 由 §17 的 declared
+dependency + intervening diff impact analysis 决定。
 
 本 Codex case **不启动 `skills-test-fixtures` runtime fixture**，因此不得
 伪造 `fixture_run_id`。记录真实 `recipe_run_id`、fixture repo SHA/dirty、
@@ -114,13 +133,14 @@ eval runtime provenance。
 
 ## 4. Exclusive run root / provenance
 
-正式 acceptance 的 canonical fixture、capability/topology verifier 与
-deterministic suite 都直接从本地 `$PRODUCER_REPO` checkout 读取/执行，所以
-producer worktree 自身的 tracked + untracked 干净状态是 `FINAL_HEAD_SHA`
-provenance 的必要条件。创建 run root 之后、消费任何 producer-owned
-fixture/verifier 之前机械记录该状态；producer checkout dirty 时只能
-`BLOCKED / NOT TESTED`，不得继续 capability probe / formal runtime
-acceptance。
+正式 acceptance 的 canonical fixture、topology verifier 与 deterministic
+suite 都直接从本地 `$PRODUCER_REPO` checkout 读取/执行，所以 producer
+worktree 自身的 tracked + untracked 干净状态是 `FINAL_HEAD_SHA` provenance
+的必要条件。创建 run root 之后、消费任何 producer-owned fixture/verifier
+之前机械记录该状态。exact revision 校验、clean producer、clean consumer、
+APM install、purity preflight、generated projection、eval/config prerequisite
+都属于本章起的 bootstrap：任何一步失败都停在 `CASE_NOT_STARTED`，只记录
+bootstrap failure reason，不作产品 verdict。
 
 ```bash
 set -euo pipefail
@@ -142,7 +162,10 @@ if [ -n "$PRODUCER_DIRTY" ]; then
     >"$RUN_ROOT/output/producer-repo-dirty.txt"
   printf '%s\n' "$PRODUCER_DIRTY" \
     >"$RUN_ROOT/output/producer-repo-status.txt"
-  echo 'producer checkout dirty -> BLOCKED / NOT TESTED'
+  printf '%s\n' \
+    'CASE_NOT_STARTED: producer checkout dirty; producer-owned fixture/verifier provenance to FINAL_HEAD_SHA not established' \
+    >"$RUN_ROOT/output/case-status.txt"
+  cat "$RUN_ROOT/output/case-status.txt"
   exit 1
 fi
 printf '%s\n' 'producer_repo_dirty=no' \
@@ -169,7 +192,7 @@ apm --version >"$RUN_ROOT/output/apm-version.txt"
 
 ```bash
 cat >"$CONSUMER/apm.yml" <<EOF
-name: paper-analysis-issue13-consumer
+name: paper-analysis-codex-full-leaf-consumer
 version: 0.0.0
 targets: [codex]
 dependencies:
@@ -222,16 +245,15 @@ cp "$CONSUMER/apm.lock.yaml" "$RUN_ROOT/output/apm.lock.yaml"
 test-only artifacts 一旦进入 production skill 安装树，被测 agent 就能读到
 测试执行知识并改变正式入口行为；这种 run 属于 test setup contamination，
 不能产生 producer 行为结论。安装后在任何 `/eval` 调用之前机械检查，任一
-命中立即 `BLOCKED / NOT TESTED`：不得继续 runtime topology，更不得据此判
-`FAIL_PRODUCER`。
+命中立即按 bootstrap 失败处理：`CASE_NOT_STARTED`，不得继续 runtime
+topology，更不得据此判 `FAIL_PRODUCER`。
 
 ```bash
 PURITY_OUT="$RUN_ROOT/output/purity-preflight.txt"
 
 LEAKS="$(find "$CONSUMER/.agents/skills/paper-analysis" \
   \( -name 'CODEX_FULL_MODE_RUNTIME_RECIPE.md' \
-     -o -name 'verify_codex_full_mode_topology.py' \
-     -o -name 'verify_codex_nested_capability_probe.py' \))"
+     -o -name 'verify_codex_full_mode_topology.py' \))"
 
 if [ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] || [ -n "$LEAKS" ]; then
   {
@@ -240,8 +262,10 @@ if [ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] || [ -n "$LEAKS" ]; th
     )"
     [ -n "$LEAKS" ] && printf '%s\n' "$LEAKS"
   } >"$PURITY_OUT"
+  printf '%s\n' \
+    'CASE_NOT_STARTED: clean-consumer purity preflight failed; installed tree contains test-only artifacts' \
+    >>"$PURITY_OUT"
   cat "$PURITY_OUT"
-  echo 'purity_preflight=FAIL -> BLOCKED / NOT TESTED'
   exit 1
 fi
 
@@ -251,7 +275,9 @@ printf '%s\n' 'purity_preflight=pass' >"$PURITY_OUT"
 ## 7. Generated projection check
 
 安装后只检查本 issue 的行为 contract，不用 TOML `name` 做 runtime
-identity gate：
+identity gate。generated projection 必须同时证明新 direct-native contract
+已部署、旧 discovery prerequisite 已不存在；任一条件不成立都是 bootstrap
+失败（`CASE_NOT_STARTED`），因为正式 producer 未按要求部署：
 
 ```bash
 python3 - <<'PY'
@@ -268,20 +294,41 @@ data = tomllib.loads(agent.read_text(encoding="utf-8"))
 instructions = data["developer_instructions"]
 assert isinstance(instructions, str) and instructions
 
+# issue #16 direct-native delegation contract (PA-DIRECT-01..05)
 required = {
     "full_delegation_required": "Codex full Step 3 必须使用运行时原生 subagent delegation",
+    "direct_native_spawn_agent": "required Step-3 child 必须靠直接调用当前 Codex 运行时暴露的公开 `spawn_agent` 多代理工具来分派三个有界只读分析工作单元，随后等待并消费三路结果",
+    "no_discovery_preflight": "不得要求在三路分析之前先查询运行时工具目录、代码执行式调用面或任何能力探测结论来确认 `spawn_agent` 可用",
+    "zero_attempt_blocker_forbidden": "**零次真实 native 委派尝试时禁止返回 `delegation unavailable` 或等价 blocker**",
+    "blocker_needs_machine_failure": "只有本次 full run 已按要求真实发起 `spawn_agent` 委派，且该调用返回 runtime machine-level delegation failure 时，才允许报告 delegation blocker",
     "no_inline_replacement": "coordinator 不得 inline 执行三路分析来替代 delegation",
     "exactly_three_delegated_units": "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
-    "discovery_before_analysis": "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode / programmatic tool-calling surface 发现实际可调用的原生 multi-agent delegation 工具",
-    "no_shell_curl_eval_fallback": "`exec_command` shell、curl、另起 `/eval` 都不是 delegation fallback",
-    "discovery_failure_explicit": "明确返回 delegation-capability failure",
+    "wait_consume_before_step4": "三路调用都发起后，等待并消费三路 child 返回的 Markdown，才进入 Step 4",
+    "no_shell_curl_eval_fallback": "`exec_command` shell、`codex exec`、`opencode run`、curl、另起 `/eval` 都不是 delegation fallback",
+    "child_failure_no_guess": "任一 required child 失败都必须明确报告，coordinator 不得猜测、补写或伪造 child 结果",
+    "opencode_contract_unchanged": "OpenCode 运行时继续保留其原生 `task` / `permission` / `question` contract",
+    "final_check_before_return": "零次真实调用时禁止返回 `delegation unavailable` 或等价 blocker",
 }
 checks = {key: marker in instructions for key, marker in required.items()}
 assert all(checks.values())
 
+# retired runtime-specific discovery mechanism: must NOT reappear
+retired = {
+    "code_mode": "Code Mode",
+    "programmatic": "programmatic",
+    "discovery": "discovery",
+    "all_tools": "ALL_TOOLS",
+    "private_namespace": "multi_agent_v1",
+    "discover_then_dispatch": "先发现后分派",
+    "capability_failure": "delegation-capability failure",
+}
+retired_found = {key: marker in instructions for key, marker in retired.items()}
+assert not any(retired_found.values()), retired_found
+
 out = {
-    "schema": 1,
+    "schema": 2,
     "checks": checks,
+    "retired_mechanism_found": retired_found,
     "sha256": hashlib.sha256(agent.read_bytes()).hexdigest(),
 }
 (run_root / "output/generated-projection.json").write_text(
@@ -291,265 +338,76 @@ out = {
 PY
 ```
 
-## 8. PA-CODEX-NESTED-CAP-00：nested-capability characterization（正式 acceptance 前置）
+## 8. Runtime configuration prerequisites and resolved-config record
 
-正式 `PA-CODEX-FULL-LEAF-01` acceptance 在本 characterization 完成前**尚未
-开始**。Codex V1 路径默认 `DEFAULT_AGENT_MAX_DEPTH = 1`
-（`core/src/config/mod.rs`），且 `collab_tools_enabled` 在
-`next_thread_spawn_depth > agent_max_depth` 时根本不向当前 thread 暴露
-collab 工具面（`core/src/tools/spec_plan.rs`；spawn handler 超限路径见
-`core/src/tools/handlers/multi_agents/spawn.rs` 的
-`Agent depth limit reached. Solve the task yourself.`）。因此"root 成功
-spawn outer、outer 零 spawn 尝试"与"depth-1 child 根本没有 nested spawn
-工具面"两种解释相容；未完成本 characterization 前，正式 business prompt
-观察到的 `outer nested != 3` 不得唯一归因 producer instruction。
-
-**调用面事实（corrected design 的依据）**：本 runtime 调用原生 V1
-multi-agent 工具的已观察入口是 Code Mode programmatic tool calling——
-`custom_tool_call: exec` 内执行
-`await tools.multi_agent_v1__spawn_agent(...)`（root 先以 `ALL_TOOLS`
-发现工具名，再经 `exec` 调用；formal `collabAgentToolCall/spawnAgent`
-随后出现）。因此 probe prompt 一旦禁止 `exec`，就同时禁掉了被测
-capability 的实际调用入口，child 的 `nested=0` 无法区分：
-
-1. child 根本没有 `multi_agent_v1__spawn_agent`；
-2. child 有该 tool，但被 test prompt 禁止通过 Code Mode `exec` 调用；
-3. model 没有主动发现/调用它。
-
-历史教训：producer SHA `68bb65d` 的首轮 Probe A/B prompt 含
-"不得用 shell、curl、exec…"，属 `BLOCKED /
-INVALID_CHARACTERIZATION_DESIGN / NOT ATTRIBUTABLE`（§19）；本轮起改用
-§9 corrected prompt 重跑。characterization 不能靠一个会抑制被测
-capability 的 prompt 得出 capability absence 结论。
-
-- Case ID: `PA-CODEX-NESTED-CAP-00`；
-- Acceptance / characterization target：在与正式 smoke 相同的 Codex profile
-  下，确认 root 创建的 depth-1 child 能否继续产生 formal depth-2
-  grandchild；然后只改变 `agents.max_depth=2` 做一次 A/B；
-- 只证明 runtime nested delegation capability；不证明 `paper-analysis`
-  behavior、agent identity、child role、内容质量；
-- identity / `agent_type` / `agentRole` / `agentPath` 一律不进入 probe
-  verdict；
-- Basis：沿用当前 pinned `skills-test-fixtures/codex-eval-adapter@9` 的
-  formal `spawnAgent` relation：只认 raw `/eval` `output.app_server_events`
-  中 `collabAgentToolCall + spawnAgent` 的 formal sender/receiver
-  ownership；不靠模型自述"有没有工具"；
-- Prerequisites：复用正式 Recipe 已完成的 exact producer SHA、clean
-  consumer、purity preflight（§6）、generated projection（§7）、fixture
-  SHA、既有 eval service；
-- Probe 必须在正式 `paper-analysis` business prompt（§13/§14）之前运行；
-  corrected Probe A′、B′ 各只运行一次，是 characterization A/B，不允许
-  retry-until-green。
-
-## 9. 固定 capability probe prompt（corrected design）
-
-root 仍只创建 exactly one direct child；child 固定任务为下述原文。**不得
-再写入"不得使用 exec"**：Code Mode `custom_tool_call: exec` 是本 runtime
-调用 `tools.multi_agent_v1__spawn_agent(...)` 的 programmatic tool-calling
-surface，不等同于 shell command；禁止它就是抑制被测 capability（§8）。
-
-```bash
-cat >"$RUN_ROOT/config/nested-capability-prompt.txt" <<'EOF'
-这是 nested-subagent capability characterization，不读取项目业务文件，不做业务分析。
-
-你作为 root 只创建 exactly one direct child，并把下面"direct child 任务"整段原文交给该 child，等待它完成后结束；root 不得自己创建 grandchild。
-
---- direct child 任务（原文传达，不要改写）---
-这是 nested-subagent capability characterization，不读取项目业务文件，不做业务分析。
-
-你必须尝试使用当前 runtime 提供的原生 subagent delegation 创建 exactly one child。
-允许使用 Code Mode / programmatic tool calling 来发现并调用 runtime 已暴露的 native multi-agent tool；这不属于 shell fallback。
-
-禁止：
-- shell command / terminal command；
-- curl / HTTP；
-- 文件写入；
-- 另起 /eval；
-- 用文本声称 GRANDCHILD_OK 来冒充 delegation。
-
-grandchild 只返回 GRANDCHILD_OK。
-创建后等待它完成，然后 direct child 只返回 CHILD_DONE。
-若 runtime 确实未向该 child 暴露 nested multi-agent tool，则直接结束，不走替代路径。
---- direct child 任务结束 ---
-EOF
-```
-
-这是 characterization prompt，允许明确要求 nested spawn；它**绝不复用**为
-正式 `PA-CODEX-FULL-LEAF-01` prompt。
-
-## 10. Probe A′ — 当前默认配置
-
-与正式 acceptance 完全相同的 runtime profile（`--json --ephemeral
---skip-git-repo-check --sandbox workspace-write --cd $CONSUMER --model
-gpt-5.6-luna --config model_reasoning_effort="low" --config
-projects."$CONSUMER".trust_level="trusted"`），唯一 prompt 为
-`$RUN_ROOT/config/nested-capability-prompt.txt`，**不增加
-`agents.max_depth` override**，只运行一次：
-
-```bash
-python3 - <<'PY'
-import json
-import os
-import pathlib
-import shlex
-
-run_root = pathlib.Path(os.environ["RUN_ROOT"])
-consumer = os.environ["CONSUMER"]
-prompt = (run_root / "config/nested-capability-prompt.txt").read_text(encoding="utf-8")
-
-args = [
-    "--json",
-    "--ephemeral",
-    "--skip-git-repo-check",
-    "--sandbox", "workspace-write",
-    "--cd", consumer,
-    "--model", "gpt-5.6-luna",
-    "--config", 'model_reasoning_effort="low"',
-    "--config", f'projects."{consumer}".trust_level="trusted"',
-    "--", prompt,
-]
-request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 900}
-(run_root / "config/capability-default-eval-request.json").write_text(
-    json.dumps(request, ensure_ascii=False, indent=2) + "\n",
-    encoding="utf-8",
-)
-PY
-
-cp "$RUN_ROOT/config/capability-default-eval-request.json" \
-  "$RUN_ROOT/output/capability-default-eval-request.json"
-
-curl --fail-with-body -sS \
-  -X POST "http://127.0.0.1:$EVAL_PORT/eval" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$RUN_ROOT/output/capability-default-eval-request.json" \
-  >"$RUN_ROOT/output/capability-default-eval-response.json"
-
-python3 "$PRODUCER_REPO/tests/runtime/verify_codex_nested_capability_probe.py" \
-  --eval-response "$RUN_ROOT/output/capability-default-eval-response.json" \
-  --contract "$FIXTURES_DIR/configs/codex-eval-adapter-contract.json" \
-  --output "$RUN_ROOT/output/capability-default-topology.json"
-```
-
-## 11. Probe B′ — 唯一变化 `agents.max_depth=2`
-
-仅在 Probe A′ 结果为 `NO_NESTED` 时运行（A′=NESTED_OK 时不得运行 B′，
-直接按 §12 分支进入正式 acceptance）。完全复用 Probe A′ 的 model /
-reasoning / sandbox / cwd / trust / prompt；
-**唯一允许变化**是 args 列表在 trust config 之后新增一项
-`"--config", "agents.max_depth=2"`；同样只运行一次：
-
-```bash
-python3 - <<'PY'
-import json
-import os
-import pathlib
-import shlex
-
-run_root = pathlib.Path(os.environ["RUN_ROOT"])
-consumer = os.environ["CONSUMER"]
-prompt = (run_root / "config/nested-capability-prompt.txt").read_text(encoding="utf-8")
-
-args = [
-    "--json",
-    "--ephemeral",
-    "--skip-git-repo-check",
-    "--sandbox", "workspace-write",
-    "--cd", consumer,
-    "--model", "gpt-5.6-luna",
-    "--config", 'model_reasoning_effort="low"',
-    "--config", f'projects."{consumer}".trust_level="trusted"',
-    "--config", "agents.max_depth=2",
-    "--", prompt,
-]
-request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 900}
-(run_root / "config/capability-depth2-eval-request.json").write_text(
-    json.dumps(request, ensure_ascii=False, indent=2) + "\n",
-    encoding="utf-8",
-)
-PY
-
-cp "$RUN_ROOT/config/capability-depth2-eval-request.json" \
-  "$RUN_ROOT/output/capability-depth2-eval-request.json"
-
-curl --fail-with-body -sS \
-  -X POST "http://127.0.0.1:$EVAL_PORT/eval" \
-  -H 'Content-Type: application/json' \
-  --data-binary @"$RUN_ROOT/output/capability-depth2-eval-request.json" \
-  >"$RUN_ROOT/output/capability-depth2-eval-response.json"
-
-python3 "$PRODUCER_REPO/tests/runtime/verify_codex_nested_capability_probe.py" \
-  --eval-response "$RUN_ROOT/output/capability-depth2-eval-response.json" \
-  --contract "$FIXTURES_DIR/configs/codex-eval-adapter-contract.json" \
-  --output "$RUN_ROOT/output/capability-depth2-topology.json"
-```
-
-不换模型、不提高 reasoning、不改 prompt、不改 sandbox、不改 fixture、不改
-producer、不改 eval-server。
-
-## 12. Probe 判定与分支
-
-`verify_codex_nested_capability_probe.py` 的机械规则（只看 formal machine
-evidence；不从模型自述、prompt 文本或 identity 推导 capability）：
-
-- `/eval` 不 healthy（`passed == false`）或 `version` 为 null → `BLOCKED`；
-- malformed formal evidence → `INVALID_EVIDENCE`；
-- root formal direct child `!= 1` → `BLOCKED`（probe 没进入目标 path）；
-- root 恰 1 child 且该 child `>=1` direct formal `spawnAgent` grandchild →
-  `NESTED_OK`；
-- root 恰 1 child 且该 child `0` grandchild → `NO_NESTED`；
-- started/completed 同一 formal edge 去重；child 文本说"没有工具"不作为
-  verdict；
-- `tool_surface_diagnostics`（child/root 线程的 `custom_tool_call` 计数、
-  tool 名与是否查询过 `ALL_TOOLS`）只作 characterization 诊断，**永不改变
-  status，也不作为 identity gate**。
-
-verdict 输出字段：
-
-```json
-{
-  "schema": 2,
-  "case_id": "PA-CODEX-NESTED-CAP-00",
-  "status": "NESTED_OK | NO_NESTED | BLOCKED | INVALID_EVIDENCE",
-  "root_thread_id": "...",
-  "root_direct_child_count": 1,
-  "depth1_thread_id": "...",
-  "depth2_direct_child_count": 0,
-  "depth2_child_thread_ids": [],
-  "formal_spawn_relation_count": 1,
-  "tool_surface_diagnostics": {},
-  "reasons": [],
-  "provenance": {"eval_version": "...", "contract_id": "..."}
-}
-```
-
-verifier 退出码：`0` NESTED_OK、`1` NO_NESTED、`2` BLOCKED、
-`3` INVALID_EVIDENCE。
-
-分支（`depth_hypothesis`）：
-
-| Probe A′ | Probe B′ | depth_hypothesis | 动作 |
-| --- | --- | --- | --- |
-| `NESTED_OK` | 不运行 | `REFUTED_BY_DEFAULT` | **不停**：默认 runtime 已能 nested，depth 假设直接否定；直接进入 §13-§15 正式 acceptance，保持默认 Luna low、**不加** depth override；若正式 outer 仍 `nested != 3`，在 capability 已证明可用的前提下归 `FAIL_PRODUCER` |
-| `NO_NESTED` | `NESTED_OK` | `CONFIRMED_BY_A_B` | 写 `output/nested-capability-decision.txt`（见下），**不停下来等人工 review**，直接继续 §13-§15 的正式 acceptance，正式 eval request 固定加 `agents.max_depth=2` |
-| `NO_NESTED` | `NO_NESTED` | `NOT_CONFIRMED` | 停止：不跑 business acceptance；把 A′/B′ raw response + topology + child 工具面诊断贴 PR，等 reviewer 决定下一层 runtime/tool-surface 诊断；不提前换模型找 PASS |
-| `BLOCKED` / `INVALID_EVIDENCE` | 停止，B′ 不运行 | `UNDETERMINED` | 停止：贴证据；不得拿它推断 producer |
-
-`CONFIRMED_BY_A_B` 分支写入：
+正式 eval request 固定携带两条 runtime prerequisite config：
 
 ```text
-output/nested-capability-decision.txt
-  baseline=NO_NESTED
-  agents.max_depth=2=NESTED_OK
-  acceptance_depth_override=agents.max_depth=2
+--config agents.enabled=true
+--config agents.max_concurrent_threads_per_session=4
 ```
 
-额外诊断义务（所有分支）：完整 raw response 本身已包含 child turn 的全部
-raw `custom_tool_call` / `custom_tool_call_output` 与 formal collab
-events，原样保留；若 child 通过 Code Mode 查询 `ALL_TOOLS`，该 raw output
-完整保留在本地 run root。"child 是否存在该 tool"只作 characterization
-诊断，不作为 identity gate。
+- `4 = 1 outer child + 3 nested leaves`。主线程不计入该 spawned-agent
+  thread ceiling；这是本 case 从其冻结拓扑（§1 的 `root -> 1 -> 3`）推导出的
+  **test resource ceiling**，不是 `paper-analysis` 的产品业务上限，也不得
+  写成跨 case 默认值；
+- 该值在 §10 执行之前就已确定。任何失败之后都不得临场提高 ceiling、换
+  model、提高 reasoning 或放宽 sandbox（§16）；
+- `agents.enabled` / `agents.max_concurrent_threads_per_session` 都是无歧义
+  dotted key + bool/int TOML value，按 eval-server 的 `--config` 语义映射到
+  本 eval 的 `thread/start.config`，不影响共享 app-server 进程或其他 eval；
+- 如果 runtime 在该 config 下拒绝 `thread/start`（HTTP 400 或 runtime
+  error），那是本 case 冻结的 prerequisite 不成立：按 §15 记录原始
+  response 后停在 `CASE_NOT_STARTED` 或 `BLOCKED`，**不得**换 key 名、删
+  config 或降 ceiling 后重新求绿。
 
-## 13. Fixed input / prompt
+pinned `/eval` surface 只把 Codex 实际解析出的
+`approvalPolicy` / `approvalsReviewer` / `sandbox` 作为
+`output.thread_start_effective` 回报，**不提供任何 `agents.*` readback**。
+因此 resolved configuration 的记录方式是：request 侧的 before/after 差值 +
+response 侧 effective 快照原样摘录，并明确标注 `agents.*` 为
+`not_reported_by_pinned_surface`。本 Recipe 不为此新增第二次 runtime
+characterization run（issue #16 Non-goals：不新增 runtime case）。
+
+```bash
+python3 - <<'PY'
+import json
+import os
+import pathlib
+
+run_root = pathlib.Path(os.environ["RUN_ROOT"])
+record = {
+    "schema": 1,
+    "case_id": "PA-CODEX-FULL-LEAF-01",
+    "before_override": {
+        "agents.enabled": None,
+        "agents.max_concurrent_threads_per_session": None,
+    },
+    "after_override": {
+        "agents.enabled": True,
+        "agents.max_concurrent_threads_per_session": 4,
+    },
+    "ceiling_derivation": "4 = 1 formal outer child + 3 formal nested leaves; root/main thread not counted",
+    "ceiling_kind": "test resource ceiling derived from the frozen topology; not a product business limit",
+    "effective_readback_field": "output.thread_start_effective",
+    "agents_keys_readback": "not_reported_by_pinned_surface",
+    "mutable_after_failure": False,
+}
+(run_root / "output/runtime-config-requested.json").write_text(
+    json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+)
+PY
+
+# §10 取得 response 之后再执行：原样摘录 Codex 报告的 effective config
+jq '.output.thread_start_effective' \
+  "$RUN_ROOT/output/eval-response.json" \
+  >"$RUN_ROOT/output/runtime-config-effective.json"
+```
+
+`output/runtime-config-effective.json` 只是证据：它的键集合、缺失值或后续
+变化都不参与本 case 的 verdict，也不得用来推断 `agents.*` 是否被应用。
+
+## 9. Fixed input / prompt
 
 ```bash
 mkdir -p "$CONSUMER/runtime-output"
@@ -576,19 +434,11 @@ save: $CONSUMER/runtime-output
 EOF
 ```
 
-禁止临场修改 prompt / fixture。
+prompt 固定、topology-blind：不提示 nested topology、不提示 tool 名、不提示
+任何 discovery/capability mechanism，也不要求 child 报告它是否拥有某个
+工具。禁止临场修改 prompt / fixture。
 
-## 14. Execution — existing eval service only
-
-仅当 §12 分支结果为 `depth_hypothesis=CONFIRMED_BY_A_B` 或
-`REFUTED_BY_DEFAULT` 时才执行本章（两种分支都是 characterization 已完成、
-capability 已证实可用）；`NOT_CONFIRMED` / `UNDETERMINED` 不得进入本章。
-
-正式 eval request 在原 profile 之上，仅当 `CONFIRMED_BY_A_B` 时固定加入
-已经由 A′/B′ 证明为必要 runtime prerequisite 的
-`--config agents.max_depth=2`；`REFUTED_BY_DEFAULT` 分支不加该 config
-（这不是"同 SHA FAIL 后改 config 重跑到绿"：正式 acceptance 在
-capability probe 完成之前尚未开始）。
+## 10. Execution — existing eval service only
 
 从既有 eval-server checkout 读取端口，不管理服务生命周期：
 
@@ -614,17 +464,15 @@ args = [
     "--cd", consumer,
     "--model", "gpt-5.6-luna",
     "--config", 'model_reasoning_effort="low"',
+    # §8 frozen runtime prerequisites (test resource ceiling, not a product limit)
+    "--config", "agents.enabled=true",
+    "--config", "agents.max_concurrent_threads_per_session=4",
     # Project trust must use the dotted per-run override surface documented
     # by adapter@9 (raw_identity_path.characterization_basis); an inline
     # projects={...} map is rejected by the pinned runtime at thread/start.
     "--config", f'projects."{consumer}".trust_level="trusted"',
     "--", prompt,
 ]
-# depth_hypothesis=CONFIRMED_BY_A_B 时在 trust config 之后、"--" 之前插入：
-#   "--config", "agents.max_depth=2",
-# （V1 default agents.max_depth=1 已被 Probe A'/B' 证明对 depth-1 child
-# 不暴露 nested spawn 工具面；该 override 只能以 CONFIRMED_BY_A_B 为凭据
-# 加入，REFUTED_BY_DEFAULT 分支不得添加。）
 request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 900}
 # timeout: caller-side wall-clock budget for one full nested run
 # (root -> outer child -> nested leaves -> assembly). 300s proved too small
@@ -642,9 +490,44 @@ cp "$RUN_ROOT/config/eval-request.json" "$RUN_ROOT/output/eval-request.json"
 curl --fail-with-body -sS \
   -X POST "http://127.0.0.1:$EVAL_PORT/eval" \
   -H 'Content-Type: application/json' \
-  --data-binary @"$RUN_ROOT/config/eval-request.json" \
+  --data-binary @"$RUN_ROOT/output/eval-request.json" \
   >"$RUN_ROOT/output/eval-response.json"
 ```
+
+`--model gpt-5.6-luna` + `model_reasoning_effort="low"` 是 Project Consensus
+冻结的默认 Codex smoke profile；model/profile 本身不是产品 PASS/FAIL 条件。
+
+### CASE_STARTED 边界
+
+`/eval` HTTP 请求失败（`curl` 非零）或响应里没有可归属本 run 的非空
+`output.thread_id`，都表示正式 case 尚未开始：按 `CASE_NOT_STARTED` 停止，
+只记录 bootstrap/transport failure reason，不作产品 verdict。取得 root
+provenance 之后才写 `CASE_STARTED` 并进入 §11。
+
+```bash
+set -euo pipefail
+
+ROOT_THREAD_ID="$(jq -r '.output.thread_id // empty' "$RUN_ROOT/output/eval-response.json")"
+EVAL_VERSION="$(jq -r '.version // empty' "$RUN_ROOT/output/eval-response.json")"
+
+if [ -z "$ROOT_THREAD_ID" ]; then
+  printf '%s\n' \
+    'CASE_NOT_STARTED: no root runtime provenance attributable to this run' \
+    >"$RUN_ROOT/output/case-status.txt"
+  cat "$RUN_ROOT/output/case-status.txt"
+  exit 1
+fi
+
+{
+  printf 'CASE_STARTED\n'
+  printf 'recipe_run_id=%s\n' "$(cat "$RUN_ROOT/output/recipe-run-id.txt")"
+  printf 'root_thread_id=%s\n' "$ROOT_THREAD_ID"
+  printf 'eval_version=%s\n' "${EVAL_VERSION:-null}"
+} >"$RUN_ROOT/output/case-status.txt"
+```
+
+`version` 缺失不改变 `CASE_STARTED`：它是 provenance，由 §11 verifier 判
+`BLOCKED`。
 
 ### 重要：本 case 不调用 shared adapter 形成 verdict
 
@@ -660,7 +543,7 @@ parse_codex_eval_evidence.py ... 作为 PASS/FAIL/BLOCKED gate
 adapter 通过”。原始响应完整保存；本 producer topology verifier 根本不消费
 identity surface。
 
-## 15. Producer topology verifier
+## 11. Producer topology verifier
 
 ```bash
 python3 "$PRODUCER_REPO/tests/runtime/verify_codex_full_mode_topology.py" \
@@ -671,10 +554,12 @@ python3 "$PRODUCER_REPO/tests/runtime/verify_codex_full_mode_topology.py" \
 
 verifier 必须执行：
 
-1. 顶层 `/eval.passed == true`；否则在没有 producer-specific violation
-   证据时 `BLOCKED`；
-2. `version` 非 null，原样记录 provenance；
-3. 从 `output.thread_id` 取得 root thread id；
+1. 顶层 `/eval.passed` 是 boolean；不是 boolean → `INVALID_EVIDENCE`；
+2. `version` 非 null 且非空字符串，原样记录 provenance；null → `BLOCKED`；
+   非 string 非 null → `INVALID_EVIDENCE`；`passed == false` → `BLOCKED`
+   （harness failure 先于任何 producer 归因）；
+3. 从 `output.thread_id` 取得 root thread id；缺失/非字符串 →
+   `INVALID_EVIDENCE`；
 4. 从 `output.app_server_events` 按 pinned contract 提取 formal
    `spawnAgent` ownership（`item/started` | `item/completed`、
    `message.params.item`、`item.type == collabAgentToolCall`、
@@ -686,22 +571,30 @@ verifier 必须执行：
 5. dedupe started/completed 的同一 formal edge；
 6. root direct formal child 数量：`0` → `BLOCKED`；`>1` → `BLOCKED`；
    `==1` → 得到 `outer_thread_id`；
-7. 查 sender 为 `outer_thread_id` 的 distinct formal nested children：`==3` →
-   topology threshold 满足；`0/1/2/>3` → `FAIL_PRODUCER`；
+7. 查 sender 为 `outer_thread_id` 的 distinct formal nested children，按
+   §15 唯一机器判定表分派：`==3` → `PASS`；`>3` → `FAIL_PRODUCER`；
+   `1/2` → `FAIL_PRODUCER`；`==0` → `NOT_TESTED`；
 8. formal ownership/malformed evidence 冲突（`app_server_events` entry 或
    `message` wrapper 缺失/非 object、completed spawn 无 concrete receiver、
    relation shape 损坏、同一 child 被不同 sender claim、contract 未声明
    formal spawn 规则）→ `INVALID_EVIDENCE`。
 
+第 7 步的 `==0` 与 `1/2`、`>3` 必须区分：pinned evidence surface 上“formal
+edge 不存在”只是 delegation unobservable，不是外部 native-delegation
+failure 的机器证据，因此既不能猜 producer 违反 exactly-3，也不能猜 runtime
+blocker。`1/2` 是已存在的 concrete formal spawn relation 与 completed run
+一起直接违反 exactly-3；`>3` 的 extra dispatch 已经发生，下游任何失败都
+不能消除它。
+
 **verifier 不得读取 `child_thread_reads` 或任何 identity 字段**；prompt
-文本、assistant/model 自述、`subAgentActivity.agentPath` 均不得创建、修改
-或否定 formal ownership。
+文本、assistant/model 自述、`subAgentActivity.agentPath`、tool catalog 均
+不得创建、修改或否定 formal ownership。
 
 verdict 输出字段（无任何暗示 identity 已验收的名称）：
 
 ```json
 {
-  "schema": 1,
+  "schema": 2,
   "case_id": "PA-CODEX-FULL-LEAF-01",
   "producer_status": "PASS",
   "root_thread_id": "...",
@@ -715,10 +608,18 @@ verdict 输出字段（无任何暗示 identity 已验收的名称）：
 }
 ```
 
-verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
-`3` INVALID_EVIDENCE。
+字段映射（verifier JSON 保持稳定 schema，issue #16 判定表用另一套名字）：
 
-## 16. Producer deterministic suite
+```text
+verifier root_direct_child_count   == issue 表 root_direct_child_count
+verifier nested_direct_child_count == issue 表 outer_nested_direct_child_count
+```
+
+verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
+`3` INVALID_EVIDENCE、`4` NOT_TESTED。exit code 与
+`producer_status` 必须一致；不一致属 evidence 问题。
+
+## 12. Producer deterministic suite
 
 ```bash
 (
@@ -736,10 +637,15 @@ verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
 )
 ```
 
-JSON/JSONL、YAML/TOML 的正式判断使用结构化 parser（`jq` / `yq` /
-`tomllib`），不用 grep/sed/awk 代替字段判定。
+`PA-DIRECT-DET-01`（见 issue #16 Test Plan）是 deterministic Merge Gate 的
+owner，包含本 issue 的 contract markers、negative discovery-preflight
+assertions、child-failure no-guess assertions 与既有业务 contract。本章只是
+在同一个 clean producer checkout 上复跑一次该 suite 并留下本 run 的原始
+证据；它不证明真实 Codex runtime topology。JSON/JSONL、YAML/TOML 的正式
+判断使用结构化 parser（`jq` / `yq` / `tomllib`），不用 grep/sed/awk 代替
+字段判定。
 
-## 17. Interaction
+## 13. Interaction
 
 无。`paper`、`research_direction_file`、`mode`、`save` 全部固定提供；tiny
 `.txt` fixture 不触发 PDF/OCR/Zotero/MCP/browser/user approval。
@@ -752,7 +658,7 @@ JSON/JSONL、YAML/TOML 的正式判断使用结构化 parser（`jq` / `yq` /
 - 只有在 evidence 已明确进入唯一 outer child 的 producer-owned full path，
   且固定完整输入理应足够时，才可按 producer behavior 判 FAIL。
 
-## 18. Evidence
+## 14. Evidence
 
 至少保留：
 
@@ -774,17 +680,11 @@ output/apm-install.stdout.txt
 output/apm-install.stderr.txt
 output/purity-preflight.txt
 output/generated-projection.json
-output/capability-default-eval-request.json
-output/capability-default-eval-response.json
-output/capability-default-topology.json
-# 仅 Probe A′ = NO_NESTED 后运行 Probe B′ 时保留以下 capability-depth2-*：
-output/capability-depth2-eval-request.json
-output/capability-depth2-eval-response.json
-output/capability-depth2-topology.json
-# depth_hypothesis=CONFIRMED_BY_A_B 分支必备：
-output/nested-capability-decision.txt
+output/runtime-config-requested.json
+output/runtime-config-effective.json
 output/eval-request.json
 output/eval-response.json
+output/case-status.txt
 output/runtime-topology.json
 output/uv-sync.stdout.txt
 output/uv-sync.stderr.txt
@@ -796,12 +696,27 @@ output/git-diff-check.txt
 完整 raw response 保留在本次 `/tmp` run root；PR 只贴足以证明结论的最小
 脱敏 machine evidence。`output/producer-repo-status.txt` 仅 producer
 checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared adapter 不属于
-本 case 的 merge verdict 链。corrected probe 的 child turn 中全部 raw
-`custom_tool_call` / `custom_tool_call_output` 与 formal collab events 随
-完整 raw response 原样保留；child 是否通过 Code Mode 查询过 `ALL_TOOLS`
-这类 tool 存在性信息仅作 characterization 诊断，不作为 identity gate。
+本 case 的 merge verdict 链。
 
-## 19. Verdict
+## 15. Verdict
+
+终止状态与结果一一对应；先做 malformed/conflicting/contaminated 检查，再按
+下表顺序判定。同一状态不得落入多个结果。
+
+| 机器状态 | Verdict |
+| --- | --- |
+| 未越过 §4–§8、§10 `CASE_STARTED` 边界 | `CASE_NOT_STARTED` |
+| malformed / conflicting / contaminated evidence | `INVALID_EVIDENCE`（产品层即 `INVALID_TEST_EXECUTION`） |
+| `passed == false`、`version` 为 null、provider/model unavailable | `BLOCKED` |
+| `root_direct_child_count != 1` | `BLOCKED` |
+| `root_direct_child_count == 1` 且 nested `== 3`，ownership valid | `PASS` |
+| `root_direct_child_count == 1` 且 nested `in {1,2}` | `FAIL_PRODUCER` |
+| `root_direct_child_count == 1` 且 nested `> 3` | `FAIL_PRODUCER` |
+| `root_direct_child_count == 1` 且 nested `== 0` | `NOT TESTED` |
+
+当前 pinned `codex-eval-adapter@9` 没有 native-spawn-failure machine state，
+所以「外部 failure 阻止 required topology 形成」的 `BLOCKED` 分支不可人为
+触发：不得为它发明 reason code、私有 schema 或 synthetic injection。
 
 ### PASS
 
@@ -814,14 +729,12 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
   为 `producer_repo_dirty=no`；
 - `manual_patch=no`；
 - clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
-- generated Codex projection 保留全部六条 exact behavior markers（含
-  delegation discovery 与 exactly-3 delegated units 指令），丢任一条即
-  `FAIL_PRODUCER`；
-- PA-CODEX-NESTED-CAP-00 已完成且 `depth_hypothesis` 为
-  `CONFIRMED_BY_A_B`（正式 eval request 含 `--config agents.max_depth=2`，
-  `output/nested-capability-decision.txt` 在案）或 `REFUTED_BY_DEFAULT`
-  （Probe A′=NESTED_OK，正式 eval request 不含 depth override）；
-- `/eval` execution healthy，version 有 provenance；
+- generated Codex projection 通过 §7 全部 checks：12 条 direct-native
+  contract markers 全在，且 7 条 retired discovery strings 全不在；
+- §8 的两条 runtime prerequisite config 原样出现在
+  `output/eval-request.json`，ceiling 为 `4`；
+- `output/case-status.txt` 为 `CASE_STARTED`；
+- `/eval` execution healthy（`passed == true`），version 有 provenance；
 - canonical input 为 `$RUN_ROOT/config/paper.txt`（producer repo 级 fixture
   复制，不来自 consumer 安装树）；
 - root 恰有 1 个 formal direct outer child；
@@ -830,28 +743,23 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
 - producer deterministic suite 全 PASS；
 - OpenCode native deterministic/static contract 无回归。
 
-PR evidence 必须写明本 acceptance 的 characterization 前提，二选一：
+formal exactly-3 topology 一旦由上述受支持机器证据证明，本 case 的 routing
+proof 即成立：之后 scope 外的 child、business 或 provider failure 都不反转
+该 topology PASS，只影响它们自己所属的 integration/business verdict。verifier
+只读 formal spawn relations，因此这类下游噪声在结构上就进不了判定；
+`output/runtime-topology.json` 的 `PASS` 是唯一依据。
 
-`depth_hypothesis=CONFIRMED_BY_A_B` 时：
-
-```text
-Codex V1 runtime prerequisite characterized for this acceptance:
-agents.max_depth=2
-```
-
-并且不得声称"默认 depth 配置也通过"。
-
-`depth_hypothesis=REFUTED_BY_DEFAULT` 时：
+PR evidence 对本 case 的 runtime prerequisite 只写事实：
 
 ```text
-Codex V1 nested capability characterized for this acceptance:
-default depth sufficient (Probe A' NESTED_OK); no agents.max_depth override
+Codex runtime prerequisites pinned for this acceptance:
+agents.enabled=true
+agents.max_concurrent_threads_per_session=4 (test resource ceiling)
+agents.* effective value: not reported by the pinned /eval surface
 ```
 
-两种情形都只在 `paper-analysis` repo 范围内把它记录进本 runtime
-Recipe / repo-local compatibility documentation；不为此修改
-professor-contact、fixtures、eval-server，也不修改 production agent
-wording。
+不得声称「runtime 已确认 ceiling 生效」，也不得声称
+`output.thread_start_effective` 覆盖了 `agents.*`。
 
 **任何 identity 字段的缺失、`default`、mismatch、unobservable 或
 contradiction 均不改变上述 topology verdict。**
@@ -860,13 +768,7 @@ contradiction 均不改变上述 topology verdict。**
 
 只有在：
 
-- PA-CODEX-NESTED-CAP-00 已完成且 `depth_hypothesis` 为
-  `CONFIRMED_BY_A_B`（Probe A′=NO_NESTED、Probe B′=NESTED_OK，正式 eval
-  request 含 `agents.max_depth=2`）或 `REFUTED_BY_DEFAULT`（Probe A′=
-  NESTED_OK，正式 eval request 不加 depth override）：两种情形下 nested
-  capability 均已被 corrected probe 以未受抑制的调用面证实可用，正式
-  acceptance 在 capability probe 完成之前尚未开始，未 probe 的 run 无资格
-  产生本 verdict；
+- 已越过 `CASE_STARTED`；
 - `/eval` healthy；
 - producer checkout 干净（`producer_repo_dirty=no`）；
 - 固定 input 正常；
@@ -877,10 +779,16 @@ contradiction 均不改变上述 topology verdict。**
 
 并出现以下本 issue 直接负责的行为失败时才判 FAIL：
 
-- outer child 的 distinct formal direct nested `spawnAgent` child 数量不是 `3`（`0/1/2/>3`）；
-- canonical agent 缺任一 exact marker；
-- generated Codex projection 丢失任一 exact marker；
+- outer child 产生了 concrete formal nested `spawnAgent` children，但数量
+  为 `1` 或 `2`（completed run 直接违反 exactly-3 obligation）；
+- outer child 的 distinct formal direct nested child `> 3`（extra dispatch
+  已正面发生，下游 failure 不能消除）；
+- canonical agent 缺任一 §7 exact marker，或重新出现任一 retired discovery
+  string；
 - producer deterministic contract 被本改动破坏。
+
+`nested == 0` 不属于本 verdict：absence 不是 producer 违反 exactly-3 的机器
+证据（见 `### NOT TESTED`）。
 
 ### BLOCKED
 
@@ -892,105 +800,117 @@ contradiction 均不改变上述 topology verdict。**
 - root 没有 formal direct outer child，无法证明进入目标 path；
 - root 出现多个不同 formal direct children，固定 outer dispatch 无法唯一
   归属；
-- clean consumer/provenance 不成立；
-- producer checkout dirty（tracked 或 untracked 修改未提交）：
-  **`BLOCKED / NOT TESTED`**，停止，不继续 capability probe / formal
-  runtime acceptance。记录格式：
+- 当前 runtime/eval evidence surface 不再提供本 Recipe 所需 formal
+  topology 字段；
+- runtime 明确报告 permission/concurrency/subagent capability blocker（必须
+  有原始 machine evidence 在案，不得由模型 prose 推断）。
+
+**不得因为 `agent_type=default`、identity 不可观察或 identity mismatch 判
+BLOCKED。不得从 `nested == 0` 猜出 runtime blocker。**
+
+### INVALID_EVIDENCE
+
+只限 formal topology / source evidence 本身损坏或自相矛盾（产品层对应
+`INVALID_TEST_EXECUTION`）：
+
+- `eval-response.json` malformed；
+- `passed` 不是 boolean，或 `version` 是非 null 的非字符串；
+- completed formal `spawnAgent` relation 缺 concrete receivers；
+- formal sender/receiver shape malformed；
+- 同一 child 被不同 sender 的 formal spawn relation claim；
+- source isolation / manual patch / provenance 证据自相矛盾；
+- evidence 被 test setup 以外的方式污染（例如改写过 raw response）。
+
+**identity contradiction 不属于本 case 的 `INVALID_EVIDENCE` 条件。**
+
+### NOT TESTED
+
+`root_direct_child_count == 1` 且 `nested_direct_child_count == 0`，且
+当前受支持 evidence surface 没有外部 delegation-failure machine state。
+
+含义：delegation 在该 evidence surface 上仅为 unobservable。本 run 既没有
+证明 producer 的 exactly-3 obligation 被违反，也没有证明 runtime blocker
+存在；不产生 PASS/FAIL，也不得归因。记录 verifier 的
+`producer_status == "NOT_TESTED"` 与 `reasons`，并按 §16 判断是否属于
+Recipe 预定义的可重试 transport 条件。
+
+### CASE_NOT_STARTED
+
+预判定终态，不是 case verdict。触发条件全部在 `CASE_STARTED` 边界之前：
+
+- exact revision 校验失败（producer/fixture SHA 或 dirty 不符）；
+- producer checkout dirty（tracked 或 untracked 未提交）：
 
   ```text
-  BLOCKED / NOT TESTED
+  CASE_NOT_STARTED
   reason: producer checkout dirty; producer-owned fixture/verifier
   provenance to FINAL_HEAD_SHA not established
   ```
 
-- clean-consumer purity preflight 失败：安装树存在 test-only artifacts
-  （NOT TESTED）；
-- **`BLOCKED / NOT YET ATTRIBUTABLE`**：在 PA-CODEX-NESTED-CAP-00 完成
-  之前取得的任何正式 topology 观察（包括 `outer nested=0`）。记录格式：
+- clean consumer / APM install / lock provenance 不成立；
+- clean-consumer purity preflight 失败（安装树存在 test-only artifacts）；
+- §7 generated projection 断言失败（正式 producer 未按 contract 部署）；
+- §8 runtime prerequisite config 不被 runtime 接受；
+- `curl` 到 `/eval` 失败，或响应无非空 `output.thread_id`。
 
-  ```text
-  BLOCKED / NOT YET ATTRIBUTABLE
-  reason: nested runtime capability prerequisite not yet characterized
-  ```
+只记录具体 bootstrap failure reason 与已取得的证据；reason code 只用本文
+已定义的这些，不新增。
 
-  它仍是有价值的历史观察，但在未确认 depth-1 child 是否拿到 nested
-  delegation surface 的 runtime 下，不能直接证明 producer instruction
-  违反 contract，因此不得作为 `FAIL_PRODUCER` 结论；
-- **`BLOCKED / INVALID_CHARACTERIZATION_DESIGN / NOT ATTRIBUTABLE`**：
-  characterization 自身的 probe prompt 抑制了 runtime 已观察到的 native
-  调用面（Code Mode `custom_tool_call: exec` 调用
-  `tools.multi_agent_v1__spawn_agent(...)`），其 A/B 结果不能区分"child
-  没有 nested 工具面"与"被 prompt 禁止调用入口"，不得得出任何
-  `depth_hypothesis` 结论。记录格式：
+## 16. Retry / stop rules
 
-  ```text
-  INVALID_CHARACTERIZATION_DESIGN / NOT ATTRIBUTABLE
-  reason: probe prompt prohibited the observed native Code Mode invocation
-  surface (`exec`) used to call multi_agent_v1__spawn_agent
-  ```
-
-  历史 case：producer SHA `68bb65ddbb58990198bcac874663667e642e45a2` 的
-  首轮 Probe A/B（run root 见该 SHA 的 PR evidence）即属此类，
-  已从 `depth_hypothesis=NOT_CONFIRMED` 重分类；
-- probe A′/B′ 任一为 `BLOCKED` / `INVALID_EVIDENCE`，或
-  `depth_hypothesis=NOT_CONFIRMED`（停止并贴证据，不归因 producer）；
-- runtime 明确报告 permission/depth/concurrency/subagent capability
-  blocker；
-- 当前 runtime/eval evidence surface 不再提供本 Recipe 所需 formal
-  topology 字段。
-
-**不得因为 `agent_type=default`、identity 不可观察或 identity mismatch 判
-BLOCKED。**
-
-### INVALID_EVIDENCE
-
-只限 formal topology / source evidence 本身损坏或自相矛盾：
-
-- `eval-response.json` malformed；
-- completed formal `spawnAgent` relation 缺 concrete receivers；
-- formal sender/receiver shape malformed；
-- 同一 child 被不同 sender 的 formal spawn relation claim；
-- source isolation / manual patch / provenance 证据自相矛盾。
-
-**identity contradiction 不属于本 case 的 `INVALID_EVIDENCE` 条件。**
-
-## 20. Retry / invalidation
-
-- 正式 acceptance 的入口顺序固定为：完成 PA-CODEX-NESTED-CAP-00 corrected
-  Probe A′/B′ 并得到 `depth_hypothesis` 之后，才允许产生至多一次正式
-  business verdict；A′、B′ 各只运行一次，是 characterization A/B，不允许
-  retry-until-green；
-- **probe 设计约束**：corrected probe prompt 不得禁止 runtime 已观察到的
-  native 调用面（Code Mode `custom_tool_call: exec` 调用
-  `tools.multi_agent_v1__spawn_agent(...)`）；违反该约束的
-  characterization 按 §19 `BLOCKED /
-  INVALID_CHARACTERIZATION_DESIGN / NOT ATTRIBUTABLE` 记录，必须先修
-  Recipe 再以 corrected prompt 重跑 A′/B′，不得沿用其结论；
 - 每个 final SHA 的正式 acceptance 只产生一个 verdict；
+- retry 仅限本节预先声明的 transport/基础设施条件：`/eval` HTTP 层失败
+  （连接被拒、DNS、进程重启导致的 502/504）或 eval service 明确报告的
+  harness transient。retry 时输入、prompt、model、reasoning、sandbox、
+  `agents.*` config、fixture、consumer 布局、断言与判定规则全部不变，且先
+  确认前一次尝试未污染产品状态；
 - `FAIL_PRODUCER` 一旦成立即终止该 SHA 的 acceptance，不得用同一 SHA
   后续无变更重跑得到的 `PASS` 覆盖；
-- 只有 `BLOCKED`（例如 provider / harness transient）允许在同一
-  input、prompt、model、reasoning、sandbox、config 下做有界 retry；
+- `NOT TESTED` 不允许通过换 config、换 model、加提示或提高 ceiling 重采样
+  来找成功；没有新增排查价值时停止；
+- `BLOCKED`（provider / harness transient）只在上述同一冻结输入下做有界
+  retry；不得临场提高 ceiling、放宽 sandbox、改 prompt 或手动告诉 outer
+  child spawn；
+- `INVALID_EVIDENCE` 不得通过 retry-until-green 覆盖，必须先修复损坏或矛盾
+  的 evidence/source；
 - test setup contamination（purity preflight 失败或安装树被 test-only
-  artifacts 污染）按 `BLOCKED / NOT TESTED` 处理：此时观察到的任何
-  topology 结果（包括 `nested=0`）不得作为 `FAIL_PRODUCER` 结论，修复测试
-  布局后以新 final SHA 重建 consumer 重跑；
-- capability characterization 未完成时取得的任何正式 topology 观察按
-  `BLOCKED / NOT YET ATTRIBUTABLE` 记录，不得作为 `FAIL_PRODUCER` 结论；
-  完成 corrected Probe A′/B′ 后按 §12 分支继续或停止；
-- `agents.max_depth=2` 只能作为 Probe A′/B′ 以 `CONFIRMED_BY_A_B` 确认的
-  runtime prerequisite 进入正式 eval request；`REFUTED_BY_DEFAULT` 分支
-  （A′=NESTED_OK）不得添加该 override；除此之外不换模型、不提高
-  reasoning、不改 prompt、不放宽 sandbox、不手动告诉 outer child spawn；
-- 若要从 `FAIL_PRODUCER` 重新获得正式 `PASS`，必须先修复 producer、生成并
-  push 新的 final SHA，再按本文重建 clean consumer 并运行一次正式 acceptance；
-- `INVALID_EVIDENCE` 不得通过 retry-until-green 覆盖，必须先修复损坏或矛盾的
-  evidence/source；
+  artifacts 污染）按 `CASE_NOT_STARTED` 处理：此时观察到的任何 topology
+  结果（包括 `nested == 0`）都不得作为 `FAIL_PRODUCER` 结论，修复测试布局
+  后以新 final SHA 重建 consumer 重跑；
 - 不修改 shared fixtures/eval-server 追绿；
 - 不通过删改 `child_thread_reads` 或 identity events 制造 PASS（本 producer
   verifier 根本不消费它们；原始响应必须完整保存）；
-- producer SHA 或 fixture SHA 变化 → 旧 acceptance 失效，重建 clean
-  consumer；
-- Codex version 变化只更新 provenance；只有 formal topology surface 真正
-  不兼容时才 BLOCK/INVALID，并保存真实输出 characterization；
-- PASS evidence 闭合后停止，不追加长论文或下游 Stage 2 E2E。
+- 不追加“再多跑一次看看”的额外 runtime smoke；PASS evidence 闭合后停止，
+  不追加长论文或下游 Stage 2 E2E。
+
+## 17. Impact-based revalidation
+
+取代旧的 blanket “producer/fixture SHA changed ⇒ rerun everything”。
+
+本 case 的 declared revalidation dependencies：
+
+- `paper-analysis` Codex delegation instructions（`.apm/agents/paper-analysis.agent.md`）；
+- generated `.codex/agents/paper-analysis.toml` projection；
+- `tests/runtime/verify_codex_full_mode_topology.py` 与其 evidence contract；
+- `agents.enabled` / `agents.max_concurrent_threads_per_session` 等正式
+  runtime prerequisite；
+- `skills-test-fixtures` revision 与 `codex-eval-adapter` contract id；
+- 固定 prompt（`config/root-prompt.txt`）、consumer install path、APM 版本、
+  eval-server checkout 提供的 `/eval` evidence surface；
+- verdict semantics（§15 判定表与 verifier exit-code 映射）。
+
+规则：
+
+- SHA 单独改变不自动使无关 PASS 失效。先比较两个 revision 之间的
+  intervening diff 与本 case 的 declared dependency 与证明事项；
+- 命中 dependency 时按影响范围处理：`EXECUTE_CURRENT`（重新执行本 case）、
+  `REJUDGE_PRIOR_EVIDENCE`（旧 raw evidence 完整且包含当前判定所需事实时，
+  用当前规则重新判定）或 `REUSE_PRIOR_PASS`（未受影响，直接复用）；
+- 只重跑受影响的 case 与必要的 adjacent contract tests，并记录旧 PASS 的
+  revision、impact analysis 与复用理由；
+- 未命中 dependency 的 producer/fixture SHA 变化属 `REUSE_PRIOR_PASS`，需
+  写明该 diff 未触及上述任何一项；
+- Codex runtime version 变化只更新 provenance；只有 formal topology
+  surface 真正不兼容时才 `BLOCKED` / `INVALID_EVIDENCE`，并保存真实输出
+  characterization；
+- 旧执行不得记作当前执行；重新判定若不再 PASS，如实记录新结果。

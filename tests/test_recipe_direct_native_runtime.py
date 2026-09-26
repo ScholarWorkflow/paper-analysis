@@ -1,0 +1,158 @@
+"""Lock the issue #16 rewrite of the formal Codex runtime recipe.
+
+``PA-CODEX-FULL-LEAF-01`` stays the only real-Codex runtime Merge Gate, but the
+recipe must no longer treat a V1 capability characterization (A′/B′ probes,
+``agents.max_depth``, ``ALL_TOOLS``, ``multi_agent_v1``, Code Mode ``exec``) as
+an acceptance prerequisite, must pin the two frozen runtime prerequisite
+configs, must define the ``CASE_STARTED`` boundary and one verdict per terminal
+machine state, and must replace the blanket "any SHA change invalidates the
+acceptance" rule with impact-based revalidation.
+"""
+
+from pathlib import Path
+
+RECIPE_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "tests"
+    / "runtime"
+    / "CODEX_FULL_MODE_RUNTIME_RECIPE.md"
+)
+
+
+def _recipe_text() -> str:
+    return RECIPE_PATH.read_text(encoding="utf-8")
+
+
+def _slice(text: str, start_marker: str, end_marker: str) -> str:
+    start = text.index(start_marker)
+    end = text.index(end_marker, start)
+    return text[start:end]
+
+
+def _section(start_marker: str, end_marker: str) -> str:
+    return _slice(_recipe_text(), start_marker, end_marker)
+
+
+def test_retired_capability_characterization_is_no_longer_a_prerequisite() -> None:
+    recipe = _recipe_text()
+    for retired in (
+        "agents.max_depth",
+        "verify_codex_nested_capability_probe",
+        "depth_hypothesis",
+        "INVALID_CHARACTERIZATION_DESIGN",
+        "NOT YET ATTRIBUTABLE",
+        "REFUTED_BY_DEFAULT",
+        "CONFIRMED_BY_A_B",
+    ):
+        assert retired not in recipe, retired
+    # The retired case may only appear as a superseded historical note.
+    assert recipe.count("PA-CODEX-NESTED-CAP-00") == 1
+    assert "不再是本 case 的前置" in recipe
+
+
+def test_runtime_prerequisite_configs_are_pinned_and_derived_from_the_topology() -> None:
+    execution = _section("## 10. Execution", "### CASE_STARTED 边界")
+    assert '"--config", "agents.enabled=true"' in execution
+    assert '"--config", "agents.max_concurrent_threads_per_session=4"' in execution
+    config = _section("## 8. Runtime configuration", "## 9. Fixed input / prompt")
+    assert "4 = 1 outer child + 3 nested leaves" in config
+    assert "test resource ceiling" in config
+    assert "不是 `paper-analysis` 的产品业务上限" in config
+    assert "不得临场提高 ceiling" in config
+
+
+def test_resolved_config_record_states_what_the_pinned_surface_reports() -> None:
+    config = _section("## 8. Runtime configuration", "## 9. Fixed input / prompt")
+    assert "before_override" in config
+    assert "after_override" in config
+    assert "output.thread_start_effective" in config
+    assert "not_reported_by_pinned_surface" in config
+    assert "runtime-config-requested.json" in config
+    assert "runtime-config-effective.json" in config
+    pass_section = _section("### PASS", "### FAIL_PRODUCER")
+    assert "不得声称「runtime 已确认 ceiling 生效」" in pass_section
+
+
+def test_case_started_boundary_is_defined_and_precedes_every_verdict() -> None:
+    recipe = _recipe_text()
+    started = recipe.index("### CASE_STARTED 边界")
+    verdict = recipe.index("## 15. Verdict")
+    assert started < verdict
+    boundary = _slice(recipe, "### CASE_STARTED 边界", "### 重要：本 case 不调用")
+    assert "output.thread_id" in boundary
+    assert "case-status.txt" in boundary
+    bootstrap = _section("## 4. Exclusive run root / provenance", "## 5.")
+    assert "CASE_NOT_STARTED" in bootstrap
+    assert "不作产品 verdict" in bootstrap
+
+
+def test_each_terminal_machine_state_maps_to_exactly_one_verdict() -> None:
+    table = _section("## 15. Verdict", "### PASS")
+    for row in (
+        "| `root_direct_child_count != 1` | `BLOCKED` |",
+        "| `root_direct_child_count == 1` 且 nested `== 3`，ownership valid | `PASS` |",
+        "| `root_direct_child_count == 1` 且 nested `in {1,2}` | `FAIL_PRODUCER` |",
+        "| `root_direct_child_count == 1` 且 nested `> 3` | `FAIL_PRODUCER` |",
+        "| `root_direct_child_count == 1` 且 nested `== 0` | `NOT TESTED` |",
+        "| 未越过 §4–§8、§10 `CASE_STARTED` 边界 | `CASE_NOT_STARTED` |",
+    ):
+        assert row in table, row
+    assert "不得为它发明 reason code" in table
+
+
+def test_topology_absence_is_not_tested_and_never_a_producer_failure() -> None:
+    not_tested = _section("### NOT TESTED", "### CASE_NOT_STARTED")
+    assert "unobservable" in not_tested
+    assert "不产生 PASS/FAIL" in not_tested
+    fail = _section("### FAIL_PRODUCER", "### BLOCKED")
+    assert "`nested == 0` 不属于本 verdict" in fail
+    verifier = _section("## 11. Producer topology verifier", "## 12.")
+    assert "`==0` → `NOT_TESTED`" in verifier
+    assert "4` NOT_TESTED" in verifier or "`4` NOT_TESTED" in verifier
+
+
+def test_proven_topology_pass_is_not_reversed_by_out_of_scope_failure() -> None:
+    pass_section = _section("### PASS", "### FAIL_PRODUCER")
+    assert "都不反转" in pass_section
+    assert "scope 外的 child、business 或 provider failure" in pass_section
+
+
+def test_projection_check_locks_new_contract_and_retired_mechanism() -> None:
+    projection = _section("## 7. Generated projection check", "## 8.")
+    required = projection.split("required = {", 1)[1].split("\n}", 1)[0]
+    retired = projection.split("retired = {", 1)[1].split("\n}", 1)[0]
+    assert required.count('": "') == 12
+    assert retired.count('": "') == 7
+    assert "assert all(checks.values())" in projection
+    assert "assert not any(retired_found.values())" in projection
+    assert "`spawn_agent` 多代理工具来分派三个有界只读分析工作单元" in projection
+
+
+def test_identity_and_prose_surfaces_stay_out_of_the_verdict() -> None:
+    recipe = _recipe_text()
+    basis = _section("## 2. Basis", "## 3. Prerequisites")
+    assert "tool catalog / Code Mode / assistant prose（不得进入任何 verdict）" in basis
+    assert "没有** native-spawn-failure machine state" in basis
+    verifier = _section("## 11. Producer topology verifier", "## 12.")
+    assert "verifier 不得读取 `child_thread_reads` 或任何 identity 字段" in verifier
+
+
+def test_revalidation_is_impact_based_not_blanket() -> None:
+    recipe = _recipe_text()
+    revalidation = recipe[recipe.index("## 17. Impact-based revalidation"):]
+    assert "取代旧的 blanket" in revalidation
+    assert "SHA 单独改变不自动使无关 PASS 失效" in revalidation
+    for decision in ("EXECUTE_CURRENT", "REJUDGE_PRIOR_EVIDENCE", "REUSE_PRIOR_PASS"):
+        assert decision in revalidation
+    assert "intervening diff" in revalidation
+    assert "declared revalidation dependencies" in revalidation
+    # The retired blanket rule must not survive anywhere in the recipe.
+    assert "变化后旧 acceptance evidence 失效" not in recipe
+    prerequisites = _section("## 3. Prerequisites", "## 4.")
+    assert "revision 变化不自动触发整案重跑" in prerequisites
+
+
+if __name__ == "__main__":
+    import pytest
+
+    raise SystemExit(pytest.main([__file__, "-q"]))

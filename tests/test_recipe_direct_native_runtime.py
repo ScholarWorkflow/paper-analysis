@@ -157,6 +157,35 @@ def test_pre_case_started_bootstrap_is_fail_closed_through_one_status_path() -> 
     assert "set -u -o pipefail" in section4_shell
     assert "set -euo pipefail" not in section4_shell
 
+    # Required paths must be classified explicitly instead of letting ``set -u``
+    # terminate the shell before the common CASE_NOT_STARTED path can run.
+    for required_var in ("PRODUCER_REPO", "FIXTURES_DIR", "EVAL_SERVER_DIR"):
+        assert (
+            f'case_not_started "required prerequisite {required_var} is unset"'
+            in pre_started
+        )
+
+    # Provenance writes are formal bootstrap steps too: a failed write cannot
+    # be ignored while the recipe continues toward CASE_STARTED.
+    assert "write_evidence() {" in pre_started
+    for evidence_path in (
+        "fixture-repo-sha.txt",
+        "fixture-repo-dirty.txt",
+        "producer-repo-dirty.txt",
+        "producer-sha.txt",
+        "recipe-run-id.txt",
+        "consumer-path.txt",
+        "consumer-newly-created.txt",
+        "manual-patch.txt",
+        "eval-server-checkout-sha.txt",
+        "install-command.txt",
+    ):
+        marker = f'"$RUN_ROOT/output/{evidence_path}"'
+        marker_pos = pre_started.index(marker)
+        helper_pos = pre_started.rfind("write_evidence", 0, marker_pos)
+        assert helper_pos >= 0
+        assert marker_pos - helper_pos < 160
+
     # One compact regression owns the specific bootstrap stages that previously
     # escaped through bare `set -e`: revision, locked env, install, projection,
     # and HTTP transport. No extra runtime smoke is needed for these shell paths.

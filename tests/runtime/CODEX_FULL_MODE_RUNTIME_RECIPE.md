@@ -164,6 +164,25 @@ case_not_started() {
   exit 1
 }
 
+write_evidence() {
+  local value="$1"
+  local path="$2"
+  local reason="$3"
+  if ! printf '%s\n' "$value" >"$path"; then
+    case_not_started "$reason"
+  fi
+}
+
+if [ -z "${PRODUCER_REPO:-}" ]; then
+  case_not_started "required prerequisite PRODUCER_REPO is unset"
+fi
+if [ -z "${FIXTURES_DIR:-}" ]; then
+  case_not_started "required prerequisite FIXTURES_DIR is unset"
+fi
+if [ -z "${EVAL_SERVER_DIR:-}" ]; then
+  case_not_started "required prerequisite EVAL_SERVER_DIR is unset"
+fi
+
 FIXTURES_SHA=9cb4547845be323a2a7b59139ee419476f2c7113
 
 if ! FINAL_HEAD_SHA="$(git -C "$PRODUCER_REPO" rev-parse HEAD)"; then
@@ -174,7 +193,9 @@ export FINAL_HEAD_SHA
 if ! FIXTURES_ACTUAL_SHA="$(git -C "$FIXTURES_DIR" rev-parse HEAD)"; then
   case_not_started "fixture revision is unreadable"
 fi
-printf '%s\n' "$FIXTURES_ACTUAL_SHA" >"$RUN_ROOT/output/fixture-repo-sha.txt"
+write_evidence "$FIXTURES_ACTUAL_SHA" \
+  "$RUN_ROOT/output/fixture-repo-sha.txt" \
+  "fixture revision evidence write failed"
 if [ "$FIXTURES_ACTUAL_SHA" != "$FIXTURES_SHA" ]; then
   case_not_started "fixture revision does not match pinned SHA"
 fi
@@ -183,40 +204,55 @@ if ! FIXTURES_DIRTY="$(git -C "$FIXTURES_DIR" status --porcelain)"; then
   case_not_started "fixture dirty-state check failed"
 fi
 if [ -n "$FIXTURES_DIRTY" ]; then
-  printf '%s\n' "$FIXTURES_DIRTY" >"$RUN_ROOT/output/fixture-repo-status.txt"
+  write_evidence "$FIXTURES_DIRTY" \
+    "$RUN_ROOT/output/fixture-repo-status.txt" \
+    "fixture dirty-state evidence write failed"
   case_not_started "fixture repository is dirty"
 fi
-printf '%s\n' 'fixture_repo_dirty=no' >"$RUN_ROOT/output/fixture-repo-dirty.txt"
+write_evidence 'fixture_repo_dirty=no' \
+  "$RUN_ROOT/output/fixture-repo-dirty.txt" \
+  "fixture clean-state evidence write failed"
 
 if ! PRODUCER_DIRTY="$(git -C "$PRODUCER_REPO" status --porcelain)"; then
   case_not_started "producer dirty-state check failed"
 fi
 if [ -n "$PRODUCER_DIRTY" ]; then
-  printf '%s\n' 'producer_repo_dirty=yes' \
-    >"$RUN_ROOT/output/producer-repo-dirty.txt"
-  printf '%s\n' "$PRODUCER_DIRTY" \
-    >"$RUN_ROOT/output/producer-repo-status.txt"
+  write_evidence 'producer_repo_dirty=yes' \
+    "$RUN_ROOT/output/producer-repo-dirty.txt" \
+    "producer dirty-state flag write failed"
+  write_evidence "$PRODUCER_DIRTY" \
+    "$RUN_ROOT/output/producer-repo-status.txt" \
+    "producer dirty-state evidence write failed"
   case_not_started "producer checkout dirty; producer-owned fixture/verifier provenance to FINAL_HEAD_SHA not established"
 fi
-printf '%s\n' 'producer_repo_dirty=no' \
-  >"$RUN_ROOT/output/producer-repo-dirty.txt"
+write_evidence 'producer_repo_dirty=no' \
+  "$RUN_ROOT/output/producer-repo-dirty.txt" \
+  "producer clean-state evidence write failed"
 
-RECIPE_RUN_ID="$(basename "$RUN_ROOT")"
+RECIPE_RUN_ID="${RUN_ROOT##*/}"
 
 if ! git -C "$CONSUMER" init -q; then
   case_not_started "clean consumer initialization failed"
 fi
 
-printf '%s\n' "$FINAL_HEAD_SHA" >"$RUN_ROOT/output/producer-sha.txt"
-printf '%s\n' "$RECIPE_RUN_ID" >"$RUN_ROOT/output/recipe-run-id.txt"
-printf '%s\n' "$CONSUMER" >"$RUN_ROOT/output/consumer-path.txt"
-printf '%s\n' 'consumer_newly_created=yes' >"$RUN_ROOT/output/consumer-newly-created.txt"
-printf '%s\n' 'manual_patch=no' >"$RUN_ROOT/output/manual-patch.txt"
+write_evidence "$FINAL_HEAD_SHA" "$RUN_ROOT/output/producer-sha.txt" \
+  "producer revision evidence write failed"
+write_evidence "$RECIPE_RUN_ID" "$RUN_ROOT/output/recipe-run-id.txt" \
+  "recipe run ID evidence write failed"
+write_evidence "$CONSUMER" "$RUN_ROOT/output/consumer-path.txt" \
+  "consumer path evidence write failed"
+write_evidence 'consumer_newly_created=yes' \
+  "$RUN_ROOT/output/consumer-newly-created.txt" \
+  "consumer creation evidence write failed"
+write_evidence 'manual_patch=no' "$RUN_ROOT/output/manual-patch.txt" \
+  "manual-patch evidence write failed"
 
 if ! EVAL_SERVER_SHA="$(git -C "$EVAL_SERVER_DIR" rev-parse HEAD)"; then
   case_not_started "eval-server checkout provenance is unreadable"
 fi
-printf '%s\n' "$EVAL_SERVER_SHA" >"$RUN_ROOT/output/eval-server-checkout-sha.txt"
+write_evidence "$EVAL_SERVER_SHA" \
+  "$RUN_ROOT/output/eval-server-checkout-sha.txt" \
+  "eval-server revision evidence write failed"
 
 if ! apm --version >"$RUN_ROOT/output/apm-version.txt"; then
   case_not_started "APM CLI bootstrap failed"
@@ -277,7 +313,9 @@ if ! (
 ); then
   case_not_started "APM install failed"
 fi
-printf '%s\n' 'apm install --target codex' >"$RUN_ROOT/output/install-command.txt"
+write_evidence 'apm install --target codex' \
+  "$RUN_ROOT/output/install-command.txt" \
+  "install-command evidence write failed"
 
 if [ ! -f "$CONSUMER/apm.lock.yaml" ]; then
   case_not_started "APM install did not produce apm.lock.yaml"

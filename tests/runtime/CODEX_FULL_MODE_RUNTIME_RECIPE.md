@@ -136,61 +136,100 @@ eval runtime provenance。
 正式 acceptance 的 canonical fixture、topology verifier 与 deterministic
 suite 都直接从本地 `$PRODUCER_REPO` checkout 读取/执行，所以 producer
 worktree 自身的 tracked + untracked 干净状态是 `FINAL_HEAD_SHA` provenance
-的必要条件。创建 run root 之后、消费任何 producer-owned fixture/verifier
-之前机械记录该状态。exact revision 校验、clean producer、clean consumer、
-APM install、purity preflight、generated projection、eval/config prerequisite
-都属于本章起的 bootstrap：任何一步失败都停在 `CASE_NOT_STARTED`，只记录
-bootstrap failure reason，不作产品 verdict。
+的必要条件。exact revision 校验、clean producer、clean consumer、APM
+install、purity preflight、generated projection、eval/config prerequisite 都是
+`CASE_STARTED` 之前的 bootstrap；任何一步失败都必须经过同一个
+`case_not_started` 路径，写入 `output/case-status.txt` 后停止，不作产品
+verdict。bootstrap 阶段不依赖裸 `set -e` 做分类；只有成功写出
+`CASE_STARTED` 后才重新启用 `set -euo pipefail`。
 
 ```bash
-set -euo pipefail
+set -u -o pipefail
 
-export FINAL_HEAD_SHA="$(git -C "$PRODUCER_REPO" rev-parse HEAD)"
-FIXTURES_SHA=9cb4547845be323a2a7b59139ee419476f2c7113
-
-test "$(git -C "$FIXTURES_DIR" rev-parse HEAD)" = "$FIXTURES_SHA"
-test -z "$(git -C "$FIXTURES_DIR" status --porcelain)"
-
-RUN_ROOT="$(mktemp -d /tmp/paper-analysis-full-leaf.XXXXXX)"
-mkdir -p "$RUN_ROOT/config" "$RUN_ROOT/output" "$RUN_ROOT/consumer"
+RUN_ROOT="$(mktemp -d /tmp/paper-analysis-full-leaf.XXXXXX)" || {
+  printf '%s\n' 'CASE_NOT_STARTED: unable to create exclusive run root' >&2
+  exit 1
+}
+mkdir -p "$RUN_ROOT/config" "$RUN_ROOT/output" "$RUN_ROOT/consumer" || {
+  printf '%s\n' 'CASE_NOT_STARTED: unable to initialize exclusive run root' >&2
+  exit 1
+}
 export RUN_ROOT
 export CONSUMER="$RUN_ROOT/consumer"
 
-PRODUCER_DIRTY="$(git -C "$PRODUCER_REPO" status --porcelain)"
+case_not_started() {
+  local reason="$1"
+  printf 'CASE_NOT_STARTED: %s\n' "$reason" >"$RUN_ROOT/output/case-status.txt"
+  cat "$RUN_ROOT/output/case-status.txt"
+  exit 1
+}
+
+FIXTURES_SHA=9cb4547845be323a2a7b59139ee419476f2c7113
+
+if ! FINAL_HEAD_SHA="$(git -C "$PRODUCER_REPO" rev-parse HEAD)"; then
+  case_not_started "producer revision is unreadable"
+fi
+export FINAL_HEAD_SHA
+
+if ! FIXTURES_ACTUAL_SHA="$(git -C "$FIXTURES_DIR" rev-parse HEAD)"; then
+  case_not_started "fixture revision is unreadable"
+fi
+printf '%s\n' "$FIXTURES_ACTUAL_SHA" >"$RUN_ROOT/output/fixture-repo-sha.txt"
+if [ "$FIXTURES_ACTUAL_SHA" != "$FIXTURES_SHA" ]; then
+  case_not_started "fixture revision does not match pinned SHA"
+fi
+
+if ! FIXTURES_DIRTY="$(git -C "$FIXTURES_DIR" status --porcelain)"; then
+  case_not_started "fixture dirty-state check failed"
+fi
+if [ -n "$FIXTURES_DIRTY" ]; then
+  printf '%s\n' "$FIXTURES_DIRTY" >"$RUN_ROOT/output/fixture-repo-status.txt"
+  case_not_started "fixture repository is dirty"
+fi
+printf '%s\n' 'fixture_repo_dirty=no' >"$RUN_ROOT/output/fixture-repo-dirty.txt"
+
+if ! PRODUCER_DIRTY="$(git -C "$PRODUCER_REPO" status --porcelain)"; then
+  case_not_started "producer dirty-state check failed"
+fi
 if [ -n "$PRODUCER_DIRTY" ]; then
   printf '%s\n' 'producer_repo_dirty=yes' \
     >"$RUN_ROOT/output/producer-repo-dirty.txt"
   printf '%s\n' "$PRODUCER_DIRTY" \
     >"$RUN_ROOT/output/producer-repo-status.txt"
-  printf '%s\n' \
-    'CASE_NOT_STARTED: producer checkout dirty; producer-owned fixture/verifier provenance to FINAL_HEAD_SHA not established' \
-    >"$RUN_ROOT/output/case-status.txt"
-  cat "$RUN_ROOT/output/case-status.txt"
-  exit 1
+  case_not_started "producer checkout dirty; producer-owned fixture/verifier provenance to FINAL_HEAD_SHA not established"
 fi
 printf '%s\n' 'producer_repo_dirty=no' \
   >"$RUN_ROOT/output/producer-repo-dirty.txt"
 
 RECIPE_RUN_ID="$(basename "$RUN_ROOT")"
 
-git -C "$CONSUMER" init -q
+if ! git -C "$CONSUMER" init -q; then
+  case_not_started "clean consumer initialization failed"
+fi
 
 printf '%s\n' "$FINAL_HEAD_SHA" >"$RUN_ROOT/output/producer-sha.txt"
-printf '%s\n' "$FIXTURES_SHA" >"$RUN_ROOT/output/fixture-repo-sha.txt"
-printf '%s\n' 'fixture_repo_dirty=no' >"$RUN_ROOT/output/fixture-repo-dirty.txt"
 printf '%s\n' "$RECIPE_RUN_ID" >"$RUN_ROOT/output/recipe-run-id.txt"
 printf '%s\n' "$CONSUMER" >"$RUN_ROOT/output/consumer-path.txt"
 printf '%s\n' 'consumer_newly_created=yes' >"$RUN_ROOT/output/consumer-newly-created.txt"
 printf '%s\n' 'manual_patch=no' >"$RUN_ROOT/output/manual-patch.txt"
-printf '%s\n' "$(git -C "$EVAL_SERVER_DIR" rev-parse HEAD)" >"$RUN_ROOT/output/eval-server-checkout-sha.txt"
-apm --version >"$RUN_ROOT/output/apm-version.txt"
+
+if ! EVAL_SERVER_SHA="$(git -C "$EVAL_SERVER_DIR" rev-parse HEAD)"; then
+  case_not_started "eval-server checkout provenance is unreadable"
+fi
+printf '%s\n' "$EVAL_SERVER_SHA" >"$RUN_ROOT/output/eval-server-checkout-sha.txt"
+
+if ! apm --version >"$RUN_ROOT/output/apm-version.txt"; then
+  case_not_started "APM CLI bootstrap failed"
+fi
 
 # Python entry for every §5–§12 python step: the producer project's locked
 # environment. A host `python3` may predate tomllib (e.g. macOS 3.9), which is
 # a bootstrap failure, not a product result.
-( cd "$PRODUCER_REPO" && uv sync --locked ) \
+if ! ( cd "$PRODUCER_REPO" && uv sync --locked ) \
   >"$RUN_ROOT/output/uv-sync.stdout.txt" \
-  2>"$RUN_ROOT/output/uv-sync.stderr.txt"
+  2>"$RUN_ROOT/output/uv-sync.stderr.txt"; then
+  case_not_started "locked producer environment bootstrap failed"
+fi
 ```
 
 所有 python 步骤统一用锁定的 producer 环境执行，不使用宿主裸 `python3`：
@@ -204,7 +243,7 @@ cd "$PRODUCER_REPO" && uv run --locked python <见各章命令>
 不要用可能受 default registry 影响的 `owner/repo#SHA` shorthand。
 
 ```bash
-cat >"$CONSUMER/apm.yml" <<EOF
+if ! cat >"$CONSUMER/apm.yml" <<EOF
 name: paper-analysis-codex-full-leaf-consumer
 version: 0.0.0
 targets: [codex]
@@ -213,29 +252,42 @@ dependencies:
     - git: https://github.com/ScholarWorkflow/paper-analysis.git
       ref: $FINAL_HEAD_SHA
 EOF
+then
+  case_not_started "consumer APM manifest generation failed"
+fi
 
-cp "$CONSUMER/apm.yml" "$RUN_ROOT/output/consumer-apm.yml"
+if ! cp "$CONSUMER/apm.yml" "$RUN_ROOT/output/consumer-apm.yml"; then
+  case_not_started "consumer APM manifest evidence copy failed"
+fi
 
-yq -e '.dependencies.apm[0].git == "https://github.com/ScholarWorkflow/paper-analysis.git"' \
-  "$CONSUMER/apm.yml" >/dev/null
-yq -e '.dependencies.apm[0].ref == strenv(FINAL_HEAD_SHA)' \
-  "$CONSUMER/apm.yml" >/dev/null
+if ! yq -e '.dependencies.apm[0].git == "https://github.com/ScholarWorkflow/paper-analysis.git"' \
+  "$CONSUMER/apm.yml" >/dev/null; then
+  case_not_started "consumer APM manifest source check failed"
+fi
+if ! yq -e '.dependencies.apm[0].ref == strenv(FINAL_HEAD_SHA)' \
+  "$CONSUMER/apm.yml" >/dev/null; then
+  case_not_started "consumer APM manifest revision check failed"
+fi
 
-(
+if ! (
   cd "$CONSUMER"
   apm install --target codex \
     >"$RUN_ROOT/output/apm-install.stdout.txt" \
     2>"$RUN_ROOT/output/apm-install.stderr.txt"
-)
+); then
+  case_not_started "APM install failed"
+fi
 printf '%s\n' 'apm install --target codex' >"$RUN_ROOT/output/install-command.txt"
-```
 
-必须存在：
-
-```bash
-test -f "$CONSUMER/apm.lock.yaml"
-test -f "$CONSUMER/.codex/agents/paper-analysis.toml"
-test -f "$CONSUMER/.agents/skills/paper-analysis/SKILL.md"
+if [ ! -f "$CONSUMER/apm.lock.yaml" ]; then
+  case_not_started "APM install did not produce apm.lock.yaml"
+fi
+if [ ! -f "$CONSUMER/.codex/agents/paper-analysis.toml" ]; then
+  case_not_started "APM install did not produce the Codex agent projection"
+fi
+if [ ! -f "$CONSUMER/.agents/skills/paper-analysis/SKILL.md" ]; then
+  case_not_started "APM install did not produce the paper-analysis skill"
+fi
 ```
 
 production install tree 只保留真实运行资产（`SKILL.md`、`scripts/` 等）；
@@ -248,9 +300,13 @@ test-only artifacts 机械排除见 §6 purity preflight。
 判定用 `host` + `materialization_repo_url` 组合：
 
 ```bash
-yq -e '.dependencies[] | select(.resolved_commit == strenv(FINAL_HEAD_SHA)) | select(.host == "github.com" and .materialization_repo_url == "ScholarWorkflow/paper-analysis")' \
-  "$CONSUMER/apm.lock.yaml" >/dev/null
-cp "$CONSUMER/apm.lock.yaml" "$RUN_ROOT/output/apm.lock.yaml"
+if ! yq -e '.dependencies[] | select(.resolved_commit == strenv(FINAL_HEAD_SHA)) | select(.host == "github.com" and .materialization_repo_url == "ScholarWorkflow/paper-analysis")' \
+  "$CONSUMER/apm.lock.yaml" >/dev/null; then
+  case_not_started "APM lockfile does not prove the exact Git source revision"
+fi
+if ! cp "$CONSUMER/apm.lock.yaml" "$RUN_ROOT/output/apm.lock.yaml"; then
+  case_not_started "APM lockfile evidence copy failed"
+fi
 ```
 
 ## 6. Clean-consumer purity preflight
@@ -264,9 +320,11 @@ topology，更不得据此判 `FAIL_PRODUCER`。
 ```bash
 PURITY_OUT="$RUN_ROOT/output/purity-preflight.txt"
 
-LEAKS="$(find "$CONSUMER/.agents/skills/paper-analysis" \
+if ! LEAKS="$(find "$CONSUMER/.agents/skills/paper-analysis" \
   \( -name 'CODEX_FULL_MODE_RUNTIME_RECIPE.md' \
-     -o -name 'verify_codex_full_mode_topology.py' \))"
+     -o -name 'verify_codex_full_mode_topology.py' \))"; then
+  case_not_started "clean-consumer purity scan failed"
+fi
 
 if [ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] || [ -n "$LEAKS" ]; then
   {
@@ -275,14 +333,12 @@ if [ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] || [ -n "$LEAKS" ]; th
     )"
     [ -n "$LEAKS" ] && printf '%s\n' "$LEAKS"
   } >"$PURITY_OUT"
-  printf '%s\n' \
-    'CASE_NOT_STARTED: clean-consumer purity preflight failed; installed tree contains test-only artifacts' \
-    >>"$PURITY_OUT"
-  cat "$PURITY_OUT"
-  exit 1
+  case_not_started "clean-consumer purity preflight failed; installed tree contains test-only artifacts"
 fi
 
-printf '%s\n' 'purity_preflight=pass' >"$PURITY_OUT"
+if ! printf '%s\n' 'purity_preflight=pass' >"$PURITY_OUT"; then
+  case_not_started "clean-consumer purity evidence write failed"
+fi
 ```
 
 ## 7. Generated projection check
@@ -293,7 +349,7 @@ identity gate。generated projection 必须同时证明新 direct-native contrac
 失败（`CASE_NOT_STARTED`），因为正式 producer 未按要求部署：
 
 ```bash
-(
+if ! (
   cd "$PRODUCER_REPO"
   uv run --locked python - <<'PY'
 import hashlib
@@ -351,7 +407,9 @@ out = {
     encoding="utf-8",
 )
 PY
-)
+); then
+  case_not_started "generated Codex projection contract check failed"
+fi
 ```
 
 ## 8. Runtime configuration prerequisites and resolved-config record
@@ -373,9 +431,11 @@ PY
   dotted key + bool/int TOML value，按 eval-server 的 `--config` 语义映射到
   本 eval 的 `thread/start.config`，不影响共享 app-server 进程或其他 eval；
 - 如果 runtime 在该 config 下拒绝 `thread/start`（HTTP 400 或 runtime
-  error），那是本 case 冻结的 prerequisite 不成立：按 §15 记录原始
-  response 后停在 `CASE_NOT_STARTED` 或 `BLOCKED`，**不得**换 key 名、删
-  config 或降 ceiling 后重新求绿。
+  error），且本 run 尚未取得非空 `output.thread_id`，唯一状态是
+  `CASE_NOT_STARTED`：保存已有 response/transport 证据后停止；不得换 key
+  名、删 config 或降 ceiling 后重新求绿。只有越过 `CASE_STARTED` 后，
+  受支持机器证据才可进入 `BLOCKED` / `NOT TESTED` / `FAIL_PRODUCER` /
+  `PASS` 等 case verdict。
 
 pinned `/eval` surface 只把 Codex 实际解析出的
 `approvalPolicy` / `approvalsReviewer` / `sandbox` 作为
@@ -386,7 +446,7 @@ response 侧 effective 快照原样摘录，并明确标注 `agents.*` 为
 characterization run（issue #16 Non-goals：不新增 runtime case）。
 
 ```bash
-(
+if ! (
   cd "$PRODUCER_REPO"
   uv run --locked python - <<'PY'
 import json
@@ -415,33 +475,39 @@ record = {
     json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
 )
 PY
-)
-
-# §10 取得 response 之后再执行：原样摘录 Codex 报告的 effective config
-jq '.output.thread_start_effective' \
-  "$RUN_ROOT/output/eval-response.json" \
-  >"$RUN_ROOT/output/runtime-config-effective.json"
+); then
+  case_not_started "runtime prerequisite config record generation failed"
+fi
 ```
 
-`output/runtime-config-effective.json` 只是证据：它的键集合、缺失值或后续
-变化都不参与本 case 的 verdict，也不得用来推断 `agents.*` 是否被应用。
+`output/runtime-config-effective.json` 在 §10 收到 `/eval` response 后、写出
+`CASE_STARTED` 之前从 `output.thread_start_effective` 原样提取。它只是证据：
+键集合、缺失值或后续变化都不参与本 case 的 verdict，也不得用来推断
+`agents.*` 是否被应用。
 
 ## 9. Fixed input / prompt
 
 ```bash
-mkdir -p "$CONSUMER/runtime-output"
+if ! mkdir -p "$CONSUMER/runtime-output"; then
+  case_not_started "runtime output directory initialization failed"
+fi
 
 # canonical input 仍是 producer-owned fixture：从 producer exact SHA
 # checkout 的 repo 级 fixture 复制进本次独占 run root；root prompt 只引用
 # $RUN_ROOT 下的路径，不引用 consumer 安装树内路径。
-cp "$PRODUCER_REPO/tests/fixtures/paper.txt" "$RUN_ROOT/config/paper.txt"
+if ! cp "$PRODUCER_REPO/tests/fixtures/paper.txt" "$RUN_ROOT/config/paper.txt"; then
+  case_not_started "canonical paper fixture copy failed"
+fi
 PAPER_TXT="$RUN_ROOT/config/paper.txt"
 
-cat >"$RUN_ROOT/config/research-direction.txt" <<'EOF'
+if ! cat >"$RUN_ROOT/config/research-direction.txt" <<'EOF'
 研究方向：测试用最小方向。只用于触发正式 full-mode Step 3，不评价论文质量。
 EOF
+then
+  case_not_started "research-direction fixture generation failed"
+fi
 
-cat >"$RUN_ROOT/config/root-prompt.txt" <<EOF
+if ! cat >"$RUN_ROOT/config/root-prompt.txt" <<EOF
 只执行一次 paper-analysis full-mode producer runtime smoke。
 从当前 clean consumer 中调用已安装的 paper-analysis custom agent 一次，传入：
 paper: $PAPER_TXT
@@ -451,6 +517,9 @@ save: $CONSUMER/runtime-output
 等待该 outer child 返回后结束。
 你作为 root 只负责这一次 outer dispatch：不要自己分析论文，不要为该 child 创建任何内部分析 leaf，不要指示它为了测试 spawn/创建 leaf，也不要描述它内部 Step 3 的编排。内部是否 delegation 必须完全来自安装后的 developer_instructions。
 EOF
+then
+  case_not_started "fixed root prompt generation failed"
+fi
 ```
 
 prompt 固定、topology-blind：不提示 nested topology、不提示 tool 名、不提示
@@ -459,13 +528,20 @@ prompt 固定、topology-blind：不提示 nested topology、不提示 tool 名�
 
 ## 10. Execution — existing eval service only
 
-从既有 eval-server checkout 读取端口，不管理服务生命周期：
+从既有 eval-server checkout 读取端口，不管理服务生命周期。以下所有动作仍在
+`CASE_STARTED` 之前，因此 transport/request/response provenance 失败一律经
+`case_not_started` 统一分类：
 
 ```bash
-EVAL_PORT="$(cd "$EVAL_SERVER_DIR" && direnv exec . printenv EVAL_PORT)"
+if ! EVAL_PORT="$(cd "$EVAL_SERVER_DIR" && direnv exec . printenv EVAL_PORT)"; then
+  case_not_started "eval service port resolution failed"
+fi
+if [ -z "$EVAL_PORT" ]; then
+  case_not_started "eval service port is empty"
+fi
 export EVAL_PORT
 
-(
+if ! (
   cd "$PRODUCER_REPO"
   uv run --locked python - <<'PY'
 import json
@@ -505,15 +581,21 @@ request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 900}
     encoding="utf-8",
 )
 PY
-)
+); then
+  case_not_started "eval request generation failed"
+fi
 
-cp "$RUN_ROOT/config/eval-request.json" "$RUN_ROOT/output/eval-request.json"
+if ! cp "$RUN_ROOT/config/eval-request.json" "$RUN_ROOT/output/eval-request.json"; then
+  case_not_started "eval request evidence copy failed"
+fi
 
-curl --fail-with-body -sS \
+if ! curl --fail-with-body -sS \
   -X POST "http://127.0.0.1:$EVAL_PORT/eval" \
   -H 'Content-Type: application/json' \
   --data-binary @"$RUN_ROOT/output/eval-request.json" \
-  >"$RUN_ROOT/output/eval-response.json"
+  >"$RUN_ROOT/output/eval-response.json"; then
+  case_not_started "eval transport failed before root runtime provenance"
+fi
 ```
 
 `--model gpt-5.6-luna` + `model_reasoning_effort="low"` 是 Project Consensus
@@ -521,31 +603,43 @@ curl --fail-with-body -sS \
 
 ### CASE_STARTED 边界
 
-`/eval` HTTP 请求失败（`curl` 非零）或响应里没有可归属本 run 的非空
-`output.thread_id`，都表示正式 case 尚未开始：按 `CASE_NOT_STARTED` 停止，
-只记录 bootstrap/transport failure reason，不作产品 verdict。取得 root
-provenance 之后才写 `CASE_STARTED` 并进入 §11。
+`/eval` HTTP 请求失败（`curl` 非零）、response 无法被 `jq` 解析，或响应里
+没有可归属本 run 的非空 `output.thread_id`，都表示正式 case 尚未开始：统一
+经过 `case_not_started` 停止，只记录 bootstrap/transport failure reason，
+不作产品 verdict。只有取得 root provenance、保存 resolved-config evidence
+并成功写出 `CASE_STARTED` 后才进入 §11。
 
 ```bash
-set -euo pipefail
-
-ROOT_THREAD_ID="$(jq -r '.output.thread_id // empty' "$RUN_ROOT/output/eval-response.json")"
-EVAL_VERSION="$(jq -r '.version // empty' "$RUN_ROOT/output/eval-response.json")"
-
+if ! ROOT_THREAD_ID="$(jq -r '.output.thread_id // empty' "$RUN_ROOT/output/eval-response.json")"; then
+  case_not_started "eval response is not parseable before root runtime provenance"
+fi
 if [ -z "$ROOT_THREAD_ID" ]; then
-  printf '%s\n' \
-    'CASE_NOT_STARTED: no root runtime provenance attributable to this run' \
-    >"$RUN_ROOT/output/case-status.txt"
-  cat "$RUN_ROOT/output/case-status.txt"
-  exit 1
+  case_not_started "no root runtime provenance attributable to this run"
 fi
 
-{
+if ! EVAL_VERSION="$(jq -r '.version // empty' "$RUN_ROOT/output/eval-response.json")"; then
+  case_not_started "eval version provenance could not be parsed"
+fi
+
+if ! jq '.output.thread_start_effective' \
+  "$RUN_ROOT/output/eval-response.json" \
+  >"$RUN_ROOT/output/runtime-config-effective.json"; then
+  case_not_started "runtime effective-config evidence could not be parsed"
+fi
+
+if ! {
   printf 'CASE_STARTED\n'
   printf 'recipe_run_id=%s\n' "$(cat "$RUN_ROOT/output/recipe-run-id.txt")"
   printf 'root_thread_id=%s\n' "$ROOT_THREAD_ID"
   printf 'eval_version=%s\n' "${EVAL_VERSION:-null}"
-} >"$RUN_ROOT/output/case-status.txt"
+} >"$RUN_ROOT/output/case-status.txt"; then
+  printf '%s\n' 'CASE_NOT_STARTED: unable to persist CASE_STARTED provenance' >&2
+  exit 1
+fi
+
+# From this point onward the formal case has started; non-zero product/runtime
+# execution results are interpreted by §11/§15 instead of bootstrap logic.
+set -euo pipefail
 ```
 
 `version` 缺失不改变 `CASE_STARTED`：它是 provenance，由 §11 verifier 判

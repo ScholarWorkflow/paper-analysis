@@ -25,7 +25,6 @@ EVIDENCE_START = "## 14. Evidence"
 VERDICT_START = "## 15. Verdict"
 
 
-
 def _recipe_text() -> str:
     return RECIPE_PATH.read_text(encoding="utf-8")
 
@@ -61,7 +60,10 @@ def test_producer_dirty_preflight_covers_tracked_and_untracked_and_fails_closed(
 
 def test_fixture_dirty_check_remains_so_producer_check_is_additive() -> None:
     section4 = _section_4()
-    assert 'test -z "$(git -C "$FIXTURES_DIR" status --porcelain)"' in section4
+    assert 'FIXTURES_DIRTY="$(git -C "$FIXTURES_DIR" status --porcelain)"' in section4
+    assert 'case_not_started "fixture dirty-state check failed"' in section4
+    assert 'case_not_started "fixture repository is dirty"' in section4
+    assert "fixture_repo_dirty=no" in section4
 
 
 def test_producer_dirty_evidence_is_required_and_status_is_dirty_branch_diagnostic() -> None:

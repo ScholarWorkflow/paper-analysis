@@ -83,7 +83,7 @@ def test_case_started_boundary_is_defined_and_precedes_every_verdict() -> None:
     assert "case-status.txt" in boundary
     bootstrap = _section("## 4. Exclusive run root / provenance", "## 5.")
     assert "CASE_NOT_STARTED" in bootstrap
-    assert "不作产品 verdict" in bootstrap
+    assert "不作产品 verdict" in " ".join(bootstrap.split())
 
 
 def test_each_terminal_machine_state_maps_to_exactly_one_verdict() -> None:
@@ -153,8 +153,9 @@ def test_pre_case_started_bootstrap_is_fail_closed_through_one_status_path() -> 
     assert pre_started.index("case_not_started() {") < pre_started.index(
         "FIXTURES_SHA="
     )
-    assert "set -u -o pipefail" in pre_started
-    assert "set -euo pipefail" not in pre_started
+    section4_shell = pre_started.split("```bash", 1)[1].split("```", 1)[0]
+    assert "set -u -o pipefail" in section4_shell
+    assert "set -euo pipefail" not in section4_shell
 
     # One compact regression owns the specific bootstrap stages that previously
     # escaped through bare `set -e`: revision, locked env, install, projection,

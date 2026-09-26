@@ -366,9 +366,7 @@ fi
 
 if [ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] || [ -n "$LEAKS" ]; then
   {
-    printf 'installed_tests_dir=%s\n' "$(
-      [ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] && echo present || echo absent
-    )"
+    printf 'installed_tests_dir=%s\n' "$([ -e "$CONSUMER/.agents/skills/paper-analysis/tests" ] && echo present || echo absent)"
     [ -n "$LEAKS" ] && printf '%s\n' "$LEAKS"
   } >"$PURITY_OUT"
   case_not_started "clean-consumer purity preflight failed; installed tree contains test-only artifacts"
@@ -794,9 +792,12 @@ verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
 owner，包含本 issue 的 contract markers、negative discovery-preflight
 assertions、child-failure no-guess assertions 与既有业务 contract。本章只是
 在同一个 clean producer checkout 上复跑一次该 suite 并留下本 run 的原始
-证据；它不证明真实 Codex runtime topology。JSON/JSONL、YAML/TOML 的正式
-判断使用结构化 parser（`jq` / `yq` / `tomllib`），不用 grep/sed/awk 代替
-字段判定。
+证据；它不证明真实 Codex runtime topology，也**不改变**
+`PA-CODEX-FULL-LEAF-01` 的 runtime verdict。若 deterministic suite 失败，
+按 `PA-DIRECT-DET-01` 自己的 Recipe / verdict 单独记录；本 runtime case 仍只按
+§11 / §15 的 formal topology machine evidence 判定。JSON/JSONL、YAML/TOML
+的正式判断使用结构化 parser（`jq` / `yq` / `tomllib`），不用 grep/sed/awk
+代替字段判定。
 
 ## 13. Interaction
 
@@ -892,9 +893,11 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
   复制，不来自 consumer 安装树）；
 - root 恰有 1 个 formal direct outer child；
 - outer child 有恰好 `3` 个 distinct formal direct `spawnAgent` nested child；
-- formal ownership 无冲突；
-- producer deterministic suite 全 PASS；
-- OpenCode native deterministic/static contract 无回归。
+- formal ownership 无冲突。
+
+`PA-DIRECT-DET-01` 的 pytest / static contract 结果是独立 deterministic Gate，
+不作为本 runtime case 的 PASS 条件，也不得反转已经由 formal topology 证明的
+runtime verdict。
 
 formal exactly-3 topology 一旦由上述受支持机器证据证明，本 case 的 routing
 proof 即成立：之后 scope 外的 child、business 或 provider failure 都不反转
@@ -930,15 +933,16 @@ contradiction 均不改变上述 topology verdict。**
 - root 恰有唯一 formal outer child；
 - formal topology evidence 本身有效；
 
-并出现以下本 issue 直接负责的行为失败时才判 FAIL：
+并出现以下本 runtime case 直接负责的行为失败时才判 FAIL：
 
 - outer child 产生了 concrete formal nested `spawnAgent` children，但数量
   为 `1` 或 `2`（completed run 直接违反 exactly-3 obligation）；
 - outer child 的 distinct formal direct nested child `> 3`（extra dispatch
-  已正面发生，下游 failure 不能消除）；
-- canonical agent 缺任一 §7 exact marker，或重新出现任一 retired discovery
-  string；
-- producer deterministic contract 被本改动破坏。
+  已正面发生，下游 failure 不能消除）。
+
+§7 generated projection failure 发生在 `CASE_STARTED` 前，唯一分类是
+`CASE_NOT_STARTED`；canonical/static producer contract 的 FAIL 归
+`PA-DIRECT-DET-01`，不得在本 runtime case 中重复归因。
 
 `nested == 0` 不属于本 verdict：absence 不是 producer 违反 exactly-3 的机器
 证据（见 `### NOT TESTED`）。

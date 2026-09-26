@@ -16,10 +16,13 @@ import sys
 
 from verify_codex_full_mode_topology import (
     CASE_ID,
+    EXIT_CODES,
     PINNED_CONTRACT_ID,
+    SCHEMA,
     STATUS_BLOCKED,
     STATUS_FAIL_PRODUCER,
     STATUS_INVALID_EVIDENCE,
+    STATUS_NOT_TESTED,
     STATUS_PASS,
     verify_topology,
 )
@@ -280,15 +283,6 @@ def test_missing_app_server_events_blocks_via_empty_topology() -> None:
 # --- FAIL_PRODUCER ------------------------------------------------------------
 
 
-def test_fail_producer_outer_child_without_nested_children() -> None:
-    events = [spawn(ROOT_THREAD, [OUTER_THREAD])]
-    verdict = verify_topology(eval_response(events), contract())
-    assert verdict["producer_status"] == STATUS_FAIL_PRODUCER
-    assert verdict["outer_thread_id"] == OUTER_THREAD
-    assert verdict["nested_direct_child_count"] == 0
-    assert verdict["reasons"]
-
-
 def test_fail_producer_outer_child_with_one_nested_child() -> None:
     events = [spawn(ROOT_THREAD, [OUTER_THREAD]), spawn(OUTER_THREAD, [NESTED_A])]
     verdict = verify_topology(eval_response(events), contract())
@@ -319,6 +313,65 @@ def test_fail_producer_outer_child_with_four_nested_children() -> None:
     verdict = verify_topology(eval_response(events), contract())
     assert verdict["producer_status"] == STATUS_FAIL_PRODUCER
     assert verdict["nested_direct_child_count"] == 4
+
+
+def test_not_tested_when_outer_child_has_no_nested_child() -> None:
+    """PA-DIRECT-03 boundary: an absent formal nested edge is unobservable
+    delegation on this evidence surface, never a producer FAIL and never a
+    guessed runtime failure."""
+
+    events = [spawn(ROOT_THREAD, [OUTER_THREAD])]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_NOT_TESTED
+    assert verdict["root_direct_child_count"] == 1
+    assert verdict["outer_thread_id"] == OUTER_THREAD
+    assert verdict["nested_direct_child_count"] == 0
+    assert verdict["reasons"]
+    assert EXIT_CODES[STATUS_NOT_TESTED] == 4
+
+
+def test_not_tested_when_outer_child_has_no_events_at_all() -> None:
+    events = [spawn(ROOT_THREAD, [], method="item/started"),
+              spawn(ROOT_THREAD, [OUTER_THREAD])]
+    verdict = verify_topology(eval_response(events), contract())
+    assert verdict["producer_status"] == STATUS_NOT_TESTED
+    assert verdict["nested_child_thread_ids"] == []
+
+
+def test_pass_is_not_reversed_by_out_of_scope_downstream_failure() -> None:
+    """Project Consensus: once the exactly-3 formal topology is machine-proven,
+    downstream child/business/provider noise cannot flip the routing proof."""
+
+    events = healthy_events()
+    downstream_failures = {
+        "child error field": {
+            **eval_response(events),
+            "output": {
+                **eval_response(events)["output"],
+                "errors": [{"message": "analysis leaf failed"}],
+                "exit_code": 1,
+            },
+        },
+        "business failure prose": {
+            **eval_response(events),
+            "output": {
+                **eval_response(events)["output"],
+                "final_message": "delegation unavailable: analysis unit failed",
+                "usage": {"tokens": 0},
+            },
+        },
+        "provider telemetry": {
+            **eval_response(events),
+            "output": {
+                **eval_response(events)["output"],
+                "subAgentActivity": [{"agentPath": "error", "status": "failed"}],
+            },
+        },
+    }
+    for label, response in downstream_failures.items():
+        verdict = verify_topology(response, contract())
+        assert verdict["producer_status"] == STATUS_PASS, label
+        assert verdict["schema"] == SCHEMA
 
 
 # --- INVALID_EVIDENCE ---------------------------------------------------------
@@ -475,6 +528,24 @@ def _write_contract(tmp_path: pathlib.Path) -> pathlib.Path:
     return path
 
 
+def _run_verifier(verifier, contract_path, response_path, out_path):
+    return subprocess.run(
+        [
+            sys.executable,
+            str(verifier),
+            "--eval-response",
+            str(response_path),
+            "--contract",
+            str(contract_path),
+            "--output",
+            str(out_path),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def test_cli_end_to_end_exit_codes(tmp_path: pathlib.Path) -> None:
     verifier = (
         pathlib.Path(__file__).resolve().parent
@@ -482,53 +553,32 @@ def test_cli_end_to_end_exit_codes(tmp_path: pathlib.Path) -> None:
     )
     contract_path = _write_contract(tmp_path)
 
-    pass_response = tmp_path / "pass-response.json"
-    pass_response.write_text(
-        json.dumps(eval_response(healthy_events())), encoding="utf-8"
-    )
-    pass_out = tmp_path / "pass-verdict.json"
-    passed = subprocess.run(
-        [
-            sys.executable,
-            str(verifier),
-            "--eval-response",
-            str(pass_response),
-            "--contract",
-            str(contract_path),
-            "--output",
-            str(pass_out),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert passed.returncode == 0, passed.stderr
-    assert json.loads(pass_out.read_text(encoding="utf-8"))["producer_status"] == (
-        STATUS_PASS
-    )
-
-    fail_response = tmp_path / "fail-response.json"
-    fail_response.write_text(
-        json.dumps(eval_response([spawn(ROOT_THREAD, [OUTER_THREAD])])),
-        encoding="utf-8",
-    )
-    fail_out = tmp_path / "fail-verdict.json"
-    failed = subprocess.run(
-        [
-            sys.executable,
-            str(verifier),
-            "--eval-response",
-            str(fail_response),
-            "--contract",
-            str(contract_path),
-            "--output",
-            str(fail_out),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    assert failed.returncode == 1, failed.stderr
-    assert json.loads(fail_out.read_text(encoding="utf-8"))["producer_status"] == (
-        STATUS_FAIL_PRODUCER
-    )
+    cases = {
+        "pass": (eval_response(healthy_events()), 0, STATUS_PASS),
+        "two nested children": (
+            eval_response(
+                [
+                    spawn(ROOT_THREAD, [OUTER_THREAD]),
+                    spawn(OUTER_THREAD, [NESTED_A]),
+                    spawn(OUTER_THREAD, [NESTED_B]),
+                ]
+            ),
+            1,
+            STATUS_FAIL_PRODUCER,
+        ),
+        "no nested child": (
+            eval_response([spawn(ROOT_THREAD, [OUTER_THREAD])]),
+            4,
+            STATUS_NOT_TESTED,
+        ),
+        "no outer child": (eval_response([]), 2, STATUS_BLOCKED),
+    }
+    for label, (response, expected_code, expected_status) in cases.items():
+        response_path = tmp_path / f"{label}-response.json"
+        response_path.write_text(json.dumps(response), encoding="utf-8")
+        out_path = tmp_path / f"{label}-verdict.json"
+        result = _run_verifier(verifier, contract_path, response_path, out_path)
+        assert result.returncode == expected_code, (label, result.stderr)
+        verdict = json.loads(out_path.read_text(encoding="utf-8"))
+        assert verdict["producer_status"] == expected_status, label
+        assert verdict["schema"] == SCHEMA, label

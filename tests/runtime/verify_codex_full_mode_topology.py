@@ -23,12 +23,21 @@ where formal children come only from contract-defined ``spawnAgent``
 relations inside ``output.app_server_events``. Prompt text, assistant/model
 self-reports and script text are never topology evidence.
 
-Producer statuses:
+Producer statuses (issue #16 verdict table):
 
-* ``PASS``             the formal topology threshold holds on healthy evidence
-* ``FAIL_PRODUCER``    evidence is healthy and the unique formal outer child
-                       exists, but it spawned anything other than exactly three
-                       formal direct nested children
+* ``PASS``             the formal topology threshold holds on healthy evidence;
+                       a later out-of-scope child, business or provider failure
+                       never reverses this routing proof, because nothing except
+                       the formal spawn relations enters the verdict
+* ``FAIL_PRODUCER``    evidence is healthy, the unique formal outer child exists
+                       and it really spawned nested children, but that completed
+                       topology violates exactly-three (``1``, ``2`` or more than
+                       ``3`` distinct formal direct nested children)
+* ``NOT_TESTED``       the outer child produced no formal nested child at all;
+                       on the pinned evidence surface absence of a formal edge is
+                       not machine evidence of an external native-delegation
+                       failure, so neither the producer nor the runtime may be
+                       blamed for this run
 * ``BLOCKED``          availability/harness gap: harness failure, runtime
                        version absent, or the root thread has zero or multiple
                        formal direct children
@@ -40,7 +49,7 @@ Producer statuses:
 
 The runtime ``version`` string is recorded as provenance only; a version
 change alone never blocks, fails or passes a run. Exit codes: 0 PASS,
-1 FAIL_PRODUCER, 2 BLOCKED, 3 INVALID_EVIDENCE.
+1 FAIL_PRODUCER, 2 BLOCKED, 3 INVALID_EVIDENCE, 4 NOT_TESTED.
 """
 
 from __future__ import annotations
@@ -50,13 +59,14 @@ import json
 import pathlib
 import sys
 
-SCHEMA = 1
+SCHEMA = 2
 CASE_ID = "PA-CODEX-FULL-LEAF-01"
 PINNED_CONTRACT_ID = "skills-test-fixtures/codex-eval-adapter@9"
 EXPECTED_NESTED_CHILD_COUNT = 3
 
 STATUS_PASS = "PASS"
 STATUS_FAIL_PRODUCER = "FAIL_PRODUCER"
+STATUS_NOT_TESTED = "NOT_TESTED"
 STATUS_BLOCKED = "BLOCKED"
 STATUS_INVALID_EVIDENCE = "INVALID_EVIDENCE"
 EXIT_CODES = {
@@ -64,6 +74,7 @@ EXIT_CODES = {
     STATUS_FAIL_PRODUCER: 1,
     STATUS_BLOCKED: 2,
     STATUS_INVALID_EVIDENCE: 3,
+    STATUS_NOT_TESTED: 4,
 }
 
 # Pinned @9 contract surfaces this verifier requires before it runs: the
@@ -408,15 +419,50 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
         )
     outer_thread_id = root_children[0]
     nested = sorted(children_by_sender.get(outer_thread_id, ()))
-    if len(nested) != EXPECTED_NESTED_CHILD_COUNT:
+    nested_count = len(nested)
+    if nested_count == EXPECTED_NESTED_CHILD_COUNT:
+        return _verdict(
+            STATUS_PASS,
+            [],
+            root_thread_id=root_thread_id,
+            root_direct_child_count=1,
+            outer_thread_id=outer_thread_id,
+            nested_child_thread_ids=nested,
+            formal_spawn_relation_count=edge_count,
+            eval_version=version,
+            contract_id=contract["contract_id"],
+        )
+    if nested_count > EXPECTED_NESTED_CHILD_COUNT:
         return _verdict(
             STATUS_FAIL_PRODUCER,
             [
                 "healthy evidence with exactly one formal outer child "
-                f"({outer_thread_id!r}), but the outer child produced "
-                f"{len(nested)} formal direct nested {rules['formal_tool']} "
-                f"children; full-mode Step 3 requires exactly "
-                f"{EXPECTED_NESTED_CHILD_COUNT} delegated children"
+                f"({outer_thread_id!r}) that produced {nested_count} distinct "
+                f"formal direct nested {rules['formal_tool']} children; the "
+                "completed topology already exceeds the exactly-"
+                f"{EXPECTED_NESTED_CHILD_COUNT} obligation, so no downstream "
+                "failure can remove the extra dispatch"
+            ],
+            root_thread_id=root_thread_id,
+            root_direct_child_count=1,
+            outer_thread_id=outer_thread_id,
+            nested_child_thread_ids=nested,
+            formal_spawn_relation_count=edge_count,
+            eval_version=version,
+            contract_id=contract["contract_id"],
+        )
+    if nested_count == 0:
+        return _verdict(
+            STATUS_NOT_TESTED,
+            [
+                "healthy evidence with exactly one formal outer child "
+                f"({outer_thread_id!r}) and no formal direct nested "
+                f"{rules['formal_tool']} child at all; on this pinned evidence "
+                "surface an absent formal edge is only unobservable delegation, "
+                "not machine evidence of an external native-delegation failure, "
+                "so neither the producer's exactly-"
+                f"{EXPECTED_NESTED_CHILD_COUNT} obligation nor a runtime blocker "
+                "is decided by this run"
             ],
             root_thread_id=root_thread_id,
             root_direct_child_count=1,
@@ -427,8 +473,14 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
             contract_id=contract["contract_id"],
         )
     return _verdict(
-        STATUS_PASS,
-        [],
+        STATUS_FAIL_PRODUCER,
+        [
+            "healthy evidence with exactly one formal outer child "
+            f"({outer_thread_id!r}) that produced {nested_count} distinct "
+            f"formal direct nested {rules['formal_tool']} children; concrete "
+            "formal spawn relations exist, so this completed run directly "
+            f"violates the exactly-{EXPECTED_NESTED_CHILD_COUNT} obligation"
+        ],
         root_thread_id=root_thread_id,
         root_direct_child_count=1,
         outer_thread_id=outer_thread_id,

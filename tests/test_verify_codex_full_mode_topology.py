@@ -254,10 +254,16 @@ def test_blocked_root_has_multiple_formal_direct_children() -> None:
     assert verdict["root_direct_child_count"] == 2
 
 
-def test_blocked_when_eval_reports_passed_false() -> None:
+def test_passed_false_does_not_override_proven_exactly_three_topology() -> None:
     response = {**eval_response(healthy_events()), "passed": False}
+    response["output"] = {
+        **response["output"],
+        "errors": [{"message": "downstream analysis leaf failed"}],
+        "exit_code": 1,
+    }
     verdict = verify_topology(response, contract())
-    assert verdict["producer_status"] == STATUS_BLOCKED
+    assert verdict["producer_status"] == STATUS_PASS
+    assert verdict["nested_direct_child_count"] == 3
 
 
 def test_blocked_when_version_is_null() -> None:

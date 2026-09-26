@@ -98,6 +98,7 @@ def test_each_terminal_machine_state_maps_to_exactly_one_verdict() -> None:
     ):
         assert row in table, row
     assert "不得为它发明 reason code" in table
+    assert "| `passed == false`" not in table
 
 
 def test_topology_absence_is_not_tested_and_never_a_producer_failure() -> None:
@@ -115,6 +116,7 @@ def test_proven_topology_pass_is_not_reversed_by_out_of_scope_failure() -> None:
     pass_section = _section("### PASS", "### FAIL_PRODUCER")
     assert "都不反转" in pass_section
     assert "scope 外的 child、business 或 provider failure" in pass_section
+    assert "`/eval.passed == false` 单独也不是" in pass_section
 
 
 def test_projection_check_locks_new_contract_and_retired_mechanism() -> None:
@@ -125,6 +127,10 @@ def test_projection_check_locks_new_contract_and_retired_mechanism() -> None:
     assert retired.count('": "') == 7
     assert "assert all(checks.values())" in projection
     assert "assert not any(retired_found.values())" in projection
+    assert '"code_mode": "Code Mode"' not in retired
+    assert '"programmatic": "programmatic"' not in retired
+    assert '"discovery": "discovery"' not in retired
+    assert '"legacy_preflight"' in retired
     assert "`spawn_agent` 多代理工具来分派三个有界只读分析工作单元" in projection
 
 

@@ -112,17 +112,18 @@ CODEX_STEP3_DIRECT_NATIVE_MARKERS = (
     "都不是 delegation fallback",
 )
 
-# Retired runtime-specific mechanism (issue #16): the production contract must not
-# keep any of these obsolete discovery-preflight strings.
-RETIRED_DISCOVERY_MECHANISM_STRINGS = (
-    "Code Mode",
-    "programmatic",
-    "discovery",
-    "ALL_TOOLS",
-    "multi_agent_v1",
+# Retired runtime-specific mechanism (issue #16): reject the old
+# discovery-as-prerequisite relationship and private tool identifiers. Ordinary
+# words such as "discovery" or "programmatic" remain legal in diagnostics.
+RETIRED_DISCOVERY_PREFLIGHT_CLAUSES = (
+    "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode "
+    "/ programmatic tool-calling surface 发现实际可调用的原生 multi-agent "
+    "delegation 工具",
+    "Code Mode `exec` 作为 programmatic tool caller 是允许的",
+    "明确返回 delegation-capability failure",
     "先发现后分派",
-    "delegation-capability failure",
 )
+RETIRED_PRIVATE_TOOL_IDENTIFIERS = ("ALL_TOOLS", "multi_agent_v1")
 
 # The three full-mode Step 3 semantic roles must survive unchanged; the Codex
 # delegation contract changes the dispatch mechanism, never the business
@@ -151,6 +152,31 @@ def _section(text: str, start: str, end: str | None) -> str:
     return text[start_index:end_index]
 
 
+def assert_no_retired_discovery_preflight(agent_text: str) -> None:
+    """Reject only the retired delegation preflight contract, not diagnostic words."""
+    private_hits = [
+        marker for marker in RETIRED_PRIVATE_TOOL_IDENTIFIERS if marker in agent_text
+    ]
+    codex_contract = (
+        _section(
+            agent_text,
+            "## 交互与运行时兼容约定",
+            "## 输入（由 task prompt 传入）",
+        )
+        + _section(agent_text, "### Step 3 — 并行子代理", "### Step 4")
+    )
+    preflight_hits = [
+        clause
+        for clause in RETIRED_DISCOVERY_PREFLIGHT_CLAUSES
+        if clause in codex_contract
+    ]
+    if private_hits or preflight_hits:
+        raise AssertionError(
+            "retired Codex discovery-preflight contract present: "
+            + ", ".join(private_hits + preflight_hits)
+        )
+
+
 def assert_orchestration_contract(agent_text: str) -> None:
     """Raise AssertionError when a required orchestration convention is missing.
 
@@ -167,6 +193,7 @@ def assert_orchestration_contract(agent_text: str) -> None:
         raise AssertionError(
             "missing orchestration conventions: " + ", ".join(missing)
         )
+    assert_no_retired_discovery_preflight(agent_text)
 
 
 class AgentRuntimeContractTests(unittest.TestCase):
@@ -526,11 +553,32 @@ class AgentRuntimeContractTests(unittest.TestCase):
         )
 
     def test_production_agent_has_no_capability_probe_preflight_contract(self):
-        """Issue #16: the retired runtime-specific discovery mechanism must not
-        survive anywhere in the production agent."""
         text = AGENT.read_text(encoding="utf-8")
-        for retired in RETIRED_DISCOVERY_MECHANISM_STRINGS:
-            self.assertNotIn(retired, text)
+        assert_no_retired_discovery_preflight(text)
+
+    def test_legacy_discovery_preflight_is_rejected(self):
+        text = AGENT.read_text(encoding="utf-8")
+        legacy = RETIRED_DISCOVERY_PREFLIGHT_CLAUSES[0]
+        mutated = text.replace(
+            "## 输入（由 task prompt 传入）",
+            legacy + "\n\n## 输入（由 task prompt 传入）",
+            1,
+        )
+        with self.assertRaises(AssertionError):
+            assert_orchestration_contract(mutated)
+
+    def test_diagnostic_discovery_wording_is_not_globally_forbidden(self):
+        text = AGENT.read_text(encoding="utf-8")
+        diagnostic = (
+            "Code Mode / programmatic discovery 可以作为 runtime diagnostics 记录，"
+            "但绝不能作为 delegation prerequisite 或 blocker 依据。"
+        )
+        mutated = text.replace(
+            "## 输入（由 task prompt 传入）",
+            diagnostic + "\n\n## 输入（由 task prompt 传入）",
+            1,
+        )
+        assert_orchestration_contract(mutated)
 
     def test_direct_native_contract_does_not_hardcode_private_tool_surface(self):
         """The contract names the public tool only: no call signature, private

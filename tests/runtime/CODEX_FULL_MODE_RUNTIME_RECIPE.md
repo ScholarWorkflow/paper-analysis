@@ -419,15 +419,17 @@ required = {
 checks = {key: marker in instructions for key, marker in required.items()}
 assert all(checks.values())
 
-# retired runtime-specific discovery mechanism: must NOT reappear
+# Retired discovery-as-prerequisite relationships/private mechanisms must
+# not reappear. Ordinary words such as Code Mode/programmatic/discovery may
+# still appear in harmless diagnostics; they are not globally forbidden.
 retired = {
-    "code_mode": "Code Mode",
-    "programmatic": "programmatic",
-    "discovery": "discovery",
+    "legacy_preflight": "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode / programmatic tool-calling surface 发现实际可调用的原生 multi-agent delegation 工具",
+    "legacy_exec_caller": "Code Mode `exec` 作为 programmatic tool caller 是允许的",
+    "legacy_capability_failure": "明确返回 delegation-capability failure",
     "all_tools": "ALL_TOOLS",
     "private_namespace": "multi_agent_v1",
     "discover_then_dispatch": "先发现后分派",
-    "capability_failure": "delegation-capability failure",
+    "discovery_failure_blocker": "discovery failure 即可变成 delegation blocker",
 }
 retired_found = {key: marker in instructions for key, marker in retired.items()}
 assert not any(retired_found.values()), retired_found
@@ -710,9 +712,10 @@ identity surface。
 verifier 必须执行：
 
 1. 顶层 `/eval.passed` 是 boolean；不是 boolean → `INVALID_EVIDENCE`；
+   该字段的 true/false 值只作为 harness summary metadata，不得在 formal
+   topology 解析前充当全局 veto，也不得反转已证明的 topology；
 2. `version` 非 null 且非空字符串，原样记录 provenance；null → `BLOCKED`；
-   非 string 非 null → `INVALID_EVIDENCE`；`passed == false` → `BLOCKED`
-   （harness failure 先于任何 producer 归因）；
+   非 string 非 null → `INVALID_EVIDENCE`；
 3. 从 `output.thread_id` 取得 root thread id；缺失/非字符串 →
    `INVALID_EVIDENCE`；
 4. 从 `output.app_server_events` 按 pinned contract 提取 formal
@@ -861,7 +864,7 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
 | --- | --- |
 | 未越过 §4–§8、§10 `CASE_STARTED` 边界 | `CASE_NOT_STARTED` |
 | malformed / conflicting / contaminated evidence | `INVALID_EVIDENCE`（产品层即 `INVALID_TEST_EXECUTION`） |
-| `passed == false`、`version` 为 null、provider/model unavailable | `BLOCKED` |
+| `version` 为 null、provider/model unavailable | `BLOCKED` |
 | `root_direct_child_count != 1` | `BLOCKED` |
 | `root_direct_child_count == 1` 且 nested `== 3`，ownership valid | `PASS` |
 | `root_direct_child_count == 1` 且 nested `in {1,2}` | `FAIL_PRODUCER` |
@@ -884,11 +887,13 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
 - `manual_patch=no`；
 - clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
 - generated Codex projection 通过 §7 全部 checks：12 条 direct-native
-  contract markers 全在，且 7 条 retired discovery strings 全不在；
+  contract markers 全在，且 7 条 retired discovery-preflight/private-mechanism
+  clauses 全不在；普通诊断词不作为全局禁词；
 - §8 的两条 runtime prerequisite config 原样出现在
   `output/eval-request.json`，ceiling 为 `4`；
 - `output/case-status.txt` 为 `CASE_STARTED`；
-- `/eval` execution healthy（`passed == true`），version 有 provenance；
+- `/eval.passed` 具有合法 boolean shape，version 有 provenance；`passed`
+  的 true/false 值本身不覆盖 formal topology verdict；
 - canonical input 为 `$RUN_ROOT/config/paper.txt`（producer repo 级 fixture
   复制，不来自 consumer 安装树）；
 - root 恰有 1 个 formal direct outer child；
@@ -901,8 +906,10 @@ runtime verdict。
 
 formal exactly-3 topology 一旦由上述受支持机器证据证明，本 case 的 routing
 proof 即成立：之后 scope 外的 child、business 或 provider failure 都不反转
-该 topology PASS，只影响它们自己所属的 integration/business verdict。verifier
-只读 formal spawn relations，因此这类下游噪声在结构上就进不了判定；
+该 topology PASS，只影响它们自己所属的 integration/business verdict。顶层
+`/eval.passed == false` 单独也不是受支持的 native-delegation failure machine
+state，不得覆盖已经成立的 formal topology。verifier 只读 formal spawn
+relations，因此这类下游噪声在结构上就进不了判定；
 `output/runtime-topology.json` 的 `PASS` 是唯一依据。
 
 PR evidence 对本 case 的 runtime prerequisite 只写事实：
@@ -925,7 +932,7 @@ contradiction 均不改变上述 topology verdict。**
 只有在：
 
 - 已越过 `CASE_STARTED`；
-- `/eval` healthy；
+- `/eval.passed` 具有合法 boolean shape；其值单独不构成 blocker；
 - producer checkout 干净（`producer_repo_dirty=no`）；
 - 固定 input 正常；
 - clean-consumer purity preflight 已通过（consumer 无 test-only artifact
@@ -952,7 +959,7 @@ contradiction 均不改变上述 topology verdict。**
 包括：
 
 - provider/model unavailable；
-- eval service / harness failure（`passed == false`）；
+- 受支持 machine evidence 正面证明的 external runtime/provider blocker；
 - `/eval.version == null`；
 - root 没有 formal direct outer child，无法证明进入目标 path；
 - root 出现多个不同 formal direct children，固定 outer dispatch 无法唯一

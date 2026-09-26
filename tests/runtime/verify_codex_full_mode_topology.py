@@ -38,9 +38,8 @@ Producer statuses (issue #16 verdict table):
                        not machine evidence of an external native-delegation
                        failure, so neither the producer nor the runtime may be
                        blamed for this run
-* ``BLOCKED``          availability/harness gap: harness failure, runtime
-                       version absent, or the root thread has zero or multiple
-                       formal direct children
+* ``BLOCKED``          availability/harness gap: runtime version absent, or
+                       the root thread has zero or multiple formal direct children
 * ``INVALID_EVIDENCE`` malformed evidence or mutually contradictory formal
                        ownership (completed spawn without concrete receivers,
                        malformed relation shape, one child claimed by
@@ -322,13 +321,9 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
             ],
             contract_id=contract["contract_id"],
         )
-    if passed is False:
-        return _verdict(
-            STATUS_BLOCKED,
-            ["eval harness reported passed=false; the run is a harness failure"],
-            eval_version=version,
-            contract_id=contract["contract_id"],
-        )
+    # ``passed`` is required for evidence-shape integrity, but its boolean
+    # value is only harness summary metadata. It cannot veto formal topology that
+    # is independently present in the supported app-server event evidence.
     field_map = contract.get("response_field_map", {})
     thread_path = (
         field_map.get("thread_id") if isinstance(field_map, dict) else None

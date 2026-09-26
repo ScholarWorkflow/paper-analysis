@@ -137,6 +137,26 @@ def test_identity_and_prose_surfaces_stay_out_of_the_verdict() -> None:
     assert "verifier 不得读取 `child_thread_reads` 或任何 identity 字段" in verifier
 
 
+def test_every_python_step_uses_the_locked_producer_environment() -> None:
+    """A host ``python3`` may predate tomllib; the recipe must not depend on it."""
+    recipe = _recipe_text()
+    after_preamble = recipe[recipe.index("## 5. Explicit Git-pinned install"):]
+    assert "python3" not in after_preamble, (
+        "no python step may invoke a bare host python3"
+    )
+    assert "verify_codex_full_mode_topology.py" in after_preamble
+    assert "uv run --locked python" in recipe
+    assert recipe.count("uv run --locked python - <<'PY'") == 3
+    assert (
+        "uv run --locked python tests/runtime/verify_codex_full_mode_topology.py"
+        in recipe
+    )
+    assert "uv run --locked pytest" in recipe
+    assert 'uv sync --locked' in _section(
+        "## 4. Exclusive run root / provenance", "## 5."
+    )
+
+
 def test_revalidation_is_impact_based_not_blanket() -> None:
     recipe = _recipe_text()
     revalidation = recipe[recipe.index("## 17. Impact-based revalidation"):]

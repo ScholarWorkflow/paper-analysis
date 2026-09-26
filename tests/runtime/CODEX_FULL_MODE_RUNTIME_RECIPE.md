@@ -184,6 +184,19 @@ printf '%s\n' 'consumer_newly_created=yes' >"$RUN_ROOT/output/consumer-newly-cre
 printf '%s\n' 'manual_patch=no' >"$RUN_ROOT/output/manual-patch.txt"
 printf '%s\n' "$(git -C "$EVAL_SERVER_DIR" rev-parse HEAD)" >"$RUN_ROOT/output/eval-server-checkout-sha.txt"
 apm --version >"$RUN_ROOT/output/apm-version.txt"
+
+# Python entry for every §5–§12 python step: the producer project's locked
+# environment. A host `python3` may predate tomllib (e.g. macOS 3.9), which is
+# a bootstrap failure, not a product result.
+( cd "$PRODUCER_REPO" && uv sync --locked ) \
+  >"$RUN_ROOT/output/uv-sync.stdout.txt" \
+  2>"$RUN_ROOT/output/uv-sync.stderr.txt"
+```
+
+所有 python 步骤统一用锁定的 producer 环境执行，不使用宿主裸 `python3`：
+
+```bash
+cd "$PRODUCER_REPO" && uv run --locked python <见各章命令>
 ```
 
 ## 5. Explicit Git-pinned install
@@ -280,7 +293,9 @@ identity gate。generated projection 必须同时证明新 direct-native contrac
 失败（`CASE_NOT_STARTED`），因为正式 producer 未按要求部署：
 
 ```bash
-python3 - <<'PY'
+(
+  cd "$PRODUCER_REPO"
+  uv run --locked python - <<'PY'
 import hashlib
 import json
 import os
@@ -336,6 +351,7 @@ out = {
     encoding="utf-8",
 )
 PY
+)
 ```
 
 ## 8. Runtime configuration prerequisites and resolved-config record
@@ -370,7 +386,9 @@ response 侧 effective 快照原样摘录，并明确标注 `agents.*` 为
 characterization run（issue #16 Non-goals：不新增 runtime case）。
 
 ```bash
-python3 - <<'PY'
+(
+  cd "$PRODUCER_REPO"
+  uv run --locked python - <<'PY'
 import json
 import os
 import pathlib
@@ -397,6 +415,7 @@ record = {
     json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
 )
 PY
+)
 
 # §10 取得 response 之后再执行：原样摘录 Codex 报告的 effective config
 jq '.output.thread_start_effective' \
@@ -446,7 +465,9 @@ prompt 固定、topology-blind：不提示 nested topology、不提示 tool 名�
 EVAL_PORT="$(cd "$EVAL_SERVER_DIR" && direnv exec . printenv EVAL_PORT)"
 export EVAL_PORT
 
-python3 - <<'PY'
+(
+  cd "$PRODUCER_REPO"
+  uv run --locked python - <<'PY'
 import json
 import os
 import pathlib
@@ -484,6 +505,7 @@ request = {"command": " ".join(shlex.quote(x) for x in args), "timeout": 900}
     encoding="utf-8",
 )
 PY
+)
 
 cp "$RUN_ROOT/config/eval-request.json" "$RUN_ROOT/output/eval-request.json"
 
@@ -546,10 +568,13 @@ identity surface。
 ## 11. Producer topology verifier
 
 ```bash
-python3 "$PRODUCER_REPO/tests/runtime/verify_codex_full_mode_topology.py" \
-  --eval-response "$RUN_ROOT/output/eval-response.json" \
-  --contract "$FIXTURES_DIR/configs/codex-eval-adapter-contract.json" \
-  --output "$RUN_ROOT/output/runtime-topology.json"
+(
+  cd "$PRODUCER_REPO"
+  uv run --locked python tests/runtime/verify_codex_full_mode_topology.py \
+    --eval-response "$RUN_ROOT/output/eval-response.json" \
+    --contract "$FIXTURES_DIR/configs/codex-eval-adapter-contract.json" \
+    --output "$RUN_ROOT/output/runtime-topology.json"
+)
 ```
 
 verifier 必须执行：
@@ -624,11 +649,7 @@ verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
 ```bash
 (
   cd "$PRODUCER_REPO"
-  uv sync --locked \
-    >"$RUN_ROOT/output/uv-sync.stdout.txt" \
-    2>"$RUN_ROOT/output/uv-sync.stderr.txt"
-
-  uv run pytest -q \
+  uv run --locked pytest -q \
     >"$RUN_ROOT/output/pytest.stdout.txt" \
     2>"$RUN_ROOT/output/pytest.stderr.txt"
 

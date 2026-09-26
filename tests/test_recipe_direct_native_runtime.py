@@ -137,6 +137,51 @@ def test_identity_and_prose_surfaces_stay_out_of_the_verdict() -> None:
     assert "verifier 不得读取 `child_thread_reads` 或任何 identity 字段" in verifier
 
 
+def test_pre_case_started_bootstrap_is_fail_closed_through_one_status_path() -> None:
+    """Gate 2: every formal bootstrap failure is classified before CASE_STARTED."""
+    recipe = _recipe_text()
+    pre_started = _slice(
+        recipe,
+        "## 4. Exclusive run root / provenance",
+        "### CASE_STARTED 边界",
+    )
+
+    # The run root and the one classification helper exist before formal checks.
+    assert pre_started.index('RUN_ROOT="$(mktemp -d') < pre_started.index(
+        "case_not_started() {"
+    )
+    assert pre_started.index("case_not_started() {") < pre_started.index(
+        "FIXTURES_SHA="
+    )
+    assert "set -u -o pipefail" in pre_started
+    assert "set -euo pipefail" not in pre_started
+
+    # One compact regression owns the specific bootstrap stages that previously
+    # escaped through bare `set -e`: revision, locked env, install, projection,
+    # and HTTP transport. No extra runtime smoke is needed for these shell paths.
+    for classified_failure in (
+        'case_not_started "fixture revision does not match pinned SHA"',
+        'case_not_started "locked producer environment bootstrap failed"',
+        'case_not_started "APM install failed"',
+        'case_not_started "generated Codex projection contract check failed"',
+        'case_not_started "eval transport failed before root runtime provenance"',
+    ):
+        assert classified_failure in pre_started, classified_failure
+    assert "if ! curl --fail-with-body" in pre_started
+
+    config = _section("## 8. Runtime configuration", "## 9. Fixed input / prompt")
+    assert "唯一状态是" in config
+    assert "`CASE_NOT_STARTED` 或 `BLOCKED`" not in config
+
+    boundary = _slice(recipe, "### CASE_STARTED 边界", "### 重要：本 case 不调用")
+    assert boundary.index(
+        'case_not_started "no root runtime provenance attributable to this run"'
+    ) < boundary.index("printf 'CASE_STARTED\\n'")
+    assert boundary.index("printf 'CASE_STARTED\\n'") < boundary.index(
+        "set -euo pipefail"
+    )
+
+
 def test_every_python_step_uses_the_locked_producer_environment() -> None:
     """A host ``python3`` may predate tomllib; the recipe must not depend on it."""
     recipe = _recipe_text()

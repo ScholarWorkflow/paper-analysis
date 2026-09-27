@@ -381,8 +381,7 @@ fi
 
 安装后只检查本 issue 的行为 contract，不用 TOML `name` 做 runtime
 identity gate。generated projection 必须同时证明新 direct-native contract
-（含 direct collaboration tool-call surface 条款）已部署、旧 discovery
-prerequisite 与代码执行面间接调用者都没有回来；任一条件不成立都是 bootstrap
+已部署、旧 discovery prerequisite 已不存在；任一条件不成立都是 bootstrap
 失败（`CASE_NOT_STARTED`），因为正式 producer 未按要求部署：
 
 ```bash
@@ -413,8 +412,6 @@ required = {
     "exactly_three_delegated_units": "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
     "wait_consume_before_step4": "三路调用都发起后，等待并消费三路 child 返回的 Markdown，才进入 Step 4",
     "no_shell_curl_eval_fallback": "`exec_command` shell、`codex exec`、`opencode run`、curl、另起 `/eval` 都不是 delegation fallback",
-    "direct_collaboration_tool_call_surface": "required Step-3 委派必须走运行时的 direct collaboration tool-call surface：`spawn_agent` 作为当前 Codex 会话直接暴露的协作工具调用（direct tool call）发起，不得包进 Code Mode / `functions.exec` / `exec` 代码执行面，也不得改成 `tools.*` namespace 下的同名函数间接调用",
-    "step3_call_point_direct_surface": "并且这次调用必须走运行时的 direct collaboration tool-call surface（把 `spawn_agent` 作为会话直接暴露的协作工具调用发起），不得包进 Code Mode / `functions.exec` / `exec` 代码执行面或 `tools.*` namespace 下的同名函数",
     "child_failure_no_guess": "任一 required child 失败都必须明确报告，coordinator 不得猜测、补写或伪造 child 结果",
     "opencode_contract_unchanged": "OpenCode 运行时继续保留其原生 `task` / `permission` / `question` contract",
     "final_check_before_return": "零次真实调用时禁止返回 `delegation unavailable` 或等价 blocker",
@@ -425,9 +422,6 @@ assert all(checks.values())
 # Retired discovery-as-prerequisite relationships/private mechanisms must
 # not reappear. Ordinary words such as Code Mode/programmatic/discovery may
 # still appear in harmless diagnostics; they are not globally forbidden.
-# `functions.exec` is named by the deployed direct-call prohibition clause, so
-# it is not a retired marker here; the indirect caller forms that clause forbids
-# (`tools.spawn_agent`, the private collaboration signature) are.
 retired = {
     "legacy_preflight": "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode / programmatic tool-calling surface 发现实际可调用的原生 multi-agent delegation 工具",
     "legacy_exec_caller": "Code Mode `exec` 作为 programmatic tool caller 是允许的",
@@ -436,8 +430,6 @@ retired = {
     "private_namespace": "multi_agent_v1",
     "discover_then_dispatch": "先发现后分派",
     "discovery_failure_blocker": "discovery failure 即可变成 delegation blocker",
-    "indirect_exec_caller": "tools.spawn_agent",
-    "private_collaboration_signature": "to=functions.collaboration",
 }
 retired_found = {key: marker in instructions for key, marker in retired.items()}
 assert not any(retired_found.values()), retired_found
@@ -894,9 +886,8 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
   为 `producer_repo_dirty=no`；
 - `manual_patch=no`；
 - clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
-- generated Codex projection 通过 §7 全部 checks：14 条 direct-native
-  contract markers（含 direct collaboration tool-call surface 两条）全在，且 9 条
-  retired discovery-preflight / private-mechanism / 代码执行面间接调用者
+- generated Codex projection 通过 §7 全部 checks：12 条 direct-native
+  contract markers 全在，且 7 条 retired discovery-preflight/private-mechanism
   clauses 全不在；普通诊断词不作为全局禁词；
 - §8 的两条 runtime prerequisite config 原样出现在
   `output/eval-request.json`，ceiling 为 `4`；

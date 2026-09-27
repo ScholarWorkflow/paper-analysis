@@ -894,8 +894,9 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
   为 `producer_repo_dirty=no`；
 - `manual_patch=no`；
 - clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
-- generated Codex projection 通过 §7 全部 checks：12 条 direct-native
-  contract markers 全在，且 7 条 retired discovery-preflight/private-mechanism
+- generated Codex projection 通过 §7 全部 checks：14 条 direct-native
+  contract markers（含 direct collaboration tool-call surface 两条）全在，且 9 条
+  retired discovery-preflight / private-mechanism / 代码执行面间接调用者
   clauses 全不在；普通诊断词不作为全局禁词；
 - §8 的两条 runtime prerequisite config 原样出现在
   `output/eval-request.json`，ceiling 为 `4`；

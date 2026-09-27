@@ -381,8 +381,8 @@ fi
 ## 7. Generated projection check
 
 安装后只检查本 issue 的行为 contract，不用 TOML `name` 做 runtime
-identity gate。generated projection 必须同时证明新 direct-native contract
-已部署、旧 discovery prerequisite 已不存在；任一条件不成立都是 bootstrap
+identity gate。generated projection 必须同时证明 direct 与 deferred Code Mode
+两种工具暴露方式都能绑定真实 spawn capability，且错误固定属性检查已被禁止；任一条件不成立都是 bootstrap
 失败（`CASE_NOT_STARTED`），因为正式 producer 未按要求部署：
 
 ```bash
@@ -402,13 +402,16 @@ data = tomllib.loads(agent.read_text(encoding="utf-8"))
 instructions = data["developer_instructions"]
 assert isinstance(instructions, str) and instructions
 
-# issue #16 direct-native delegation contract (PA-DIRECT-01..05)
+# Codex delegation contract: bind the callable actually offered by the surface.
 required = {
     "full_delegation_required": "Codex full Step 3 必须使用运行时原生 subagent delegation",
-    "direct_native_spawn_agent": "required Step-3 child 必须靠直接调用当前 Codex 运行时暴露的公开 `spawn_agent` 多代理工具来分派三个有界只读分析工作单元，随后等待并消费三路结果",
-    "no_discovery_preflight": "不得要求在三路分析之前先查询运行时工具目录、代码执行式调用面或任何能力探测结论来确认 `spawn_agent` 可用",
+    "bind_offered_spawn": "先绑定当前调用面实际提供的 subagent spawn capability，再用该 exact callable 分派三个有界只读分析工作单元",
+    "direct_surface": "直接工具面提供 `spawn_agent` 时直接调用它",
+    "deferred_code_mode_surface": "Code Mode 只提供延迟工具目录时，从 `ALL_TOOLS` 按工具说明定位 spawn capability",
+    "no_fabricated_missing_tool": "不得用 `typeof tools.spawn_agent` 或固定属性名自检来伪造 `spawn_agent not exposed`",
+    "binding_is_not_attempt": "工具绑定本身不算委派尝试；只有 spawn 调用返回 agent id 才计为已发起",
     "zero_attempt_blocker_forbidden": "**零次真实 native 委派尝试时禁止返回 `delegation unavailable` 或等价 blocker**",
-    "blocker_needs_machine_failure": "只有本次 full run 已按要求真实发起 `spawn_agent` 委派，且该调用返回 runtime machine-level delegation failure 时，才允许报告 delegation blocker",
+    "blocker_needs_machine_failure": "只有本次 full run 已调用实际绑定的 spawn capability，且该调用返回 runtime machine-level delegation failure 时，才允许报告 delegation blocker",
     "no_inline_replacement": "coordinator 不得 inline 执行三路分析来替代 delegation",
     "exactly_three_delegated_units": "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
     "wait_consume_before_step4": "三路调用都发起后，等待并消费三路 child 返回的 Markdown，才进入 Step 4",
@@ -420,17 +423,15 @@ required = {
 checks = {key: marker in instructions for key, marker in required.items()}
 assert all(checks.values())
 
-# Retired discovery-as-prerequisite relationships/private mechanisms must
-# not reappear. Ordinary words such as Code Mode/programmatic/discovery may
-# still appear in harmless diagnostics; they are not globally forbidden.
+# Reject the false-negative path observed in the failed run. Tool-directory
+# binding is supported; treating a guessed JS property as the tool is not.
 retired = {
     "legacy_preflight": "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode / programmatic tool-calling surface 发现实际可调用的原生 multi-agent delegation 工具",
-    "legacy_exec_caller": "Code Mode `exec` 作为 programmatic tool caller 是允许的",
     "legacy_capability_failure": "明确返回 delegation-capability failure",
-    "all_tools": "ALL_TOOLS",
-    "private_namespace": "multi_agent_v1",
     "discover_then_dispatch": "先发现后分派",
     "discovery_failure_blocker": "discovery failure 即可变成 delegation blocker",
+    "executable_false_probe": "if (typeof tools.spawn_agent",
+    "fabricated_not_exposed": "throw new Error(\"spawn_agent not exposed\")",
 }
 retired_found = {key: marker in instructions for key, marker in retired.items()}
 assert not any(retired_found.values()), retired_found
@@ -465,11 +466,10 @@ fi
   thread ceiling；这是本 case 从其冻结拓扑（§1 的 `root -> 1 -> 3`）推导出的
   **test resource ceiling**，不是 `paper-analysis` 的产品业务上限，也不得
   写成跨 case 默认值；
-- `2 = outer child depth 1 + nested leaves depth 2`。固定 Codex V1 default `agents.max_depth=1`
-  只允许 root 创建 outer child；当 outer child 尝试继续委派时，
-  runtime 会因下一层超过上限而隐藏 outer child 的 collaboration tools。
-  因此 `agents.max_depth=2` 是冻结拓扑的最小
-  runtime prerequisite，不是 capability probe，也不改变产品委派数量；
+- `2 = outer child depth 1 + nested leaves depth 2`。该 per-request 值只把本 case
+  所需的最小嵌套上限写入请求，避免结果依赖宿主配置或共享 app-server 的启动时快照。
+  它是冻结拓扑的 hermetic runtime prerequisite，不是对历史失败原因的归因，
+  也不改变产品委派数量；
 - 该值在 §10 执行之前就已确定。任何失败之后都不得临场提高 ceiling、换
   model、提高 reasoning 或放宽 sandbox（§16）；
 - `agents.enabled` / `agents.max_concurrent_threads_per_session` /
@@ -898,9 +898,9 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
   为 `producer_repo_dirty=no`；
 - `manual_patch=no`；
 - clean-consumer purity preflight 通过（安装树无 test-only artifacts）；
-- generated Codex projection 通过 §7 全部 checks：12 条 direct-native
-  contract markers 全在，且 7 条 retired discovery-preflight/private-mechanism
-  clauses 全不在；普通诊断词不作为全局禁词；
+- generated Codex projection 通过 §7 全部 checks：15 条 direct/deferred-surface
+  contract markers 全在，且 6 条 retired false-failure clauses 全不在；
+  `ALL_TOOLS` 只用于绑定目录实际列出的 callable，不把臆测的固定属性名当作能力判定；
 - §8 的三条 runtime prerequisite config 原样出现在
   `output/eval-request.json`，ceiling 为 `4`；
 - `output/case-status.txt` 为 `CASE_STARTED`；

@@ -50,21 +50,19 @@ REQUIRED_ORCHESTRATION_CONVENTIONS = (
      "coordinator 不得 inline 执行三路分析来替代 delegation"),
     ("codex full step3 exactly three delegated units",
      "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元"),
-    ("codex step3 direct native spawn_agent call",
-     "required Step-3 child 必须靠直接调用当前 Codex 运行时暴露的公开 "
-     "`spawn_agent` 多代理工具来分派三个有界只读分析工作单元，随后等待并消费三路结果"),
-    ("codex step3 no private schema or event field",
-     "只固定该公开工具名，不固定私有 namespace、参数 schema、request schema "
-     "或未文档化的 runtime event 字段"),
-    ("codex step3 no capability-probe precondition",
-     "不得要求在三路分析之前先查询运行时工具目录、代码执行式调用面或任何能力探测结论"
-     "来确认 `spawn_agent` 可用"),
-    ("codex step3 probe evidence alone is not a blocker",
-     "都不得单独作为 delegation blocker 依据"),
+    ("codex step3 binds the offered spawn capability",
+     "先绑定当前调用面实际提供的 subagent spawn capability，再用该 exact callable "
+     "分派三个有界只读分析工作单元"),
+    ("codex direct collaboration surface",
+     "直接工具面提供 `spawn_agent` 时直接调用它"),
+    ("codex deferred code-mode surface",
+     "Code Mode 只提供延迟工具目录时，从 `ALL_TOOLS` 按工具说明定位 spawn capability"),
+    ("codex no fabricated missing-tool failure",
+     "不得用 `typeof tools.spawn_agent` 或固定属性名自检来伪造 `spawn_agent not exposed`"),
     ("codex step3 zero-attempt blocker forbidden",
      "**零次真实 native 委派尝试时禁止返回 `delegation unavailable` 或等价 blocker**"),
     ("codex step3 blocker needs machine-level delegation failure",
-     "只有本次 full run 已按要求真实发起 `spawn_agent` 委派，且该调用返回 runtime "
+     "只有本次 full run 已调用实际绑定的 spawn capability，且该调用返回 runtime "
      "machine-level delegation failure 时，才允许报告 delegation blocker"),
     ("codex step3 no shell curl eval fallback",
      "`exec_command` shell、`codex exec`、`opencode run`、curl、另起 `/eval` "
@@ -73,8 +71,8 @@ REQUIRED_ORCHESTRATION_CONVENTIONS = (
      "任一 required child 失败都必须明确报告，coordinator 不得猜测、补写或伪造 child 结果"),
     ("codex step3 wait and consume before step4",
      "三路调用都发起后，等待并消费三路 child 返回的 Markdown，才进入 Step 4"),
-    ("codex step3 attempt precedes analysis without probe verdict",
-     "不得先等工具目录或能力探测出结论，也不因某处没列出该工具就改判能力不可用"),
+    ("codex step3 binding is not an attempt",
+     "工具绑定本身不算委派尝试；只有 spawn 调用返回 agent id 才计为已发起"),
     ("opencode native contract unchanged",
      "OpenCode 运行时继续保留其原生 `task` / `permission` / `question` contract"),
     ("codex step3 zero-attempt final check before return",
@@ -96,25 +94,25 @@ CODEX_FULL_DELEGATION_MARKERS = (
     "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
 )
 
-# Direct-native delegation contract (issue #16): Codex full-mode Step 3 calls the
-# public `spawn_agent` tool directly, never through a capability-probe preflight,
-# and may only report a delegation blocker after that real call returns a
-# machine-level failure. Shell/curl/new-eval remain non-fallbacks.
+# Codex full-mode Step 3 must bind the spawn capability exposed by the current
+# surface. Direct collaboration exposes ``spawn_agent`` while deferred Code Mode
+# exposes a namespaced callable through ``ALL_TOOLS``. A missing hard-coded JS
+# property is never a real delegation attempt or a runtime failure.
 CODEX_STEP3_DIRECT_NATIVE_MARKERS = (
-    "required Step-3 child 必须靠直接调用当前 Codex 运行时暴露的公开 "
-    "`spawn_agent` 多代理工具来分派三个有界只读分析工作单元，随后等待并消费三路结果",
-    "不得要求在三路分析之前先查询运行时工具目录、代码执行式调用面或任何能力探测结论"
-    "来确认 `spawn_agent` 可用",
+    "先绑定当前调用面实际提供的 subagent spawn capability，再用该 exact callable "
+    "分派三个有界只读分析工作单元",
+    "直接工具面提供 `spawn_agent` 时直接调用它",
+    "Code Mode 只提供延迟工具目录时，从 `ALL_TOOLS` 按工具说明定位 spawn capability",
+    "不得用 `typeof tools.spawn_agent` 或固定属性名自检来伪造 `spawn_agent not exposed`",
     "**零次真实 native 委派尝试时禁止返回 `delegation unavailable` 或等价 blocker**",
-    "只有本次 full run 已按要求真实发起 `spawn_agent` 委派，且该调用返回 runtime "
+    "只有本次 full run 已调用实际绑定的 spawn capability，且该调用返回 runtime "
     "machine-level delegation failure 时，才允许报告 delegation blocker",
     "`exec_command` shell、`codex exec`、`opencode run`、curl、另起 `/eval` "
     "都不是 delegation fallback",
 )
 
-# Retired runtime-specific mechanism (issue #16): reject the old
-# discovery-as-prerequisite relationship and private tool identifiers. Ordinary
-# words such as "discovery" or "programmatic" remain legal in diagnostics.
+# Retired behavior: discovery failure must not become a blocker, and the agent
+# must not mistake a missing hard-coded property for a runtime spawn failure.
 RETIRED_DISCOVERY_PREFLIGHT_CLAUSES = (
     "在执行任何三路分析内容前，必须先通过当前 Codex 运行时的 Code Mode "
     "/ programmatic tool-calling surface 发现实际可调用的原生 multi-agent "
@@ -123,7 +121,10 @@ RETIRED_DISCOVERY_PREFLIGHT_CLAUSES = (
     "明确返回 delegation-capability failure",
     "先发现后分派",
 )
-RETIRED_PRIVATE_TOOL_IDENTIFIERS = ("ALL_TOOLS", "multi_agent_v1")
+FALSE_SPAWN_PROBES = (
+    'if (typeof tools.spawn_agent',
+    'throw new Error("spawn_agent not exposed")',
+)
 
 # The three full-mode Step 3 semantic roles must survive unchanged; the Codex
 # delegation contract changes the dispatch mechanism, never the business
@@ -152,11 +153,8 @@ def _section(text: str, start: str, end: str | None) -> str:
     return text[start_index:end_index]
 
 
-def assert_no_retired_discovery_preflight(agent_text: str) -> None:
-    """Reject only the retired delegation preflight contract, not diagnostic words."""
-    private_hits = [
-        marker for marker in RETIRED_PRIVATE_TOOL_IDENTIFIERS if marker in agent_text
-    ]
+def assert_no_false_delegation_failure(agent_text: str) -> None:
+    """Reject the exact false-negative path observed in the failed runtime."""
     codex_contract = (
         _section(
             agent_text,
@@ -170,10 +168,11 @@ def assert_no_retired_discovery_preflight(agent_text: str) -> None:
         for clause in RETIRED_DISCOVERY_PREFLIGHT_CLAUSES
         if clause in codex_contract
     ]
-    if private_hits or preflight_hits:
+    false_probe_hits = [marker for marker in FALSE_SPAWN_PROBES if marker in agent_text]
+    if false_probe_hits or preflight_hits:
         raise AssertionError(
-            "retired Codex discovery-preflight contract present: "
-            + ", ".join(private_hits + preflight_hits)
+            "false Codex delegation-failure path present: "
+            + ", ".join(false_probe_hits + preflight_hits)
         )
 
 
@@ -193,7 +192,7 @@ def assert_orchestration_contract(agent_text: str) -> None:
         raise AssertionError(
             "missing orchestration conventions: " + ", ".join(missing)
         )
-    assert_no_retired_discovery_preflight(agent_text)
+    assert_no_false_delegation_failure(agent_text)
 
 
 class AgentRuntimeContractTests(unittest.TestCase):
@@ -512,14 +511,13 @@ class AgentRuntimeContractTests(unittest.TestCase):
         text = AGENT.read_text(encoding="utf-8")
         step3 = text.split("### Step 3 — 并行子代理", 1)[1].split("### Step 4", 1)[0]
         self.assertIn(
-            "required Step-3 child 必须直接调用当前 Codex 运行时暴露的"
-            "公开 `spawn_agent` 多代理工具",
+            "先绑定当前调用面实际提供的 subagent spawn capability",
             step3,
         )
-        self.assertIn("不得先等工具目录或能力探测出结论", step3)
+        self.assertIn("只有 spawn 调用返回 agent id 才计为已发起", step3)
         self.assertIn("三路调用都发起后，等待并消费三路 child 返回的 Markdown", step3)
         attempt_order = (
-            step3.index("required Step-3 child 必须直接调用"),
+            step3.index("先绑定当前调用面实际提供的 subagent spawn capability"),
             step3.index("三路调用都发起后，等待并消费三路 child 返回的 Markdown"),
             step3.index("才进入 Step 4"),
         )
@@ -535,7 +533,7 @@ class AgentRuntimeContractTests(unittest.TestCase):
         text = AGENT.read_text(encoding="utf-8")
         conventions = _section(text, "## 交互与运行时兼容约定", "## 输入（由 task prompt 传入）")
         attempt = conventions.index(
-            "只有本次 full run 已按要求真实发起 `spawn_agent` 委派"
+            "只有本次 full run 已调用实际绑定的 spawn capability"
         )
         blocker = conventions.index("才允许报告 delegation blocker")
         self.assertLess(attempt, blocker, "blocker permission may only follow the attempt")
@@ -552,9 +550,9 @@ class AgentRuntimeContractTests(unittest.TestCase):
             "the pre-return zero-attempt check must sit after the Step 3 call point",
         )
 
-    def test_production_agent_has_no_capability_probe_preflight_contract(self):
+    def test_production_agent_has_no_false_spawn_probe_contract(self):
         text = AGENT.read_text(encoding="utf-8")
-        assert_no_retired_discovery_preflight(text)
+        assert_no_false_delegation_failure(text)
 
     def test_legacy_discovery_preflight_is_rejected(self):
         text = AGENT.read_text(encoding="utf-8")
@@ -567,28 +565,14 @@ class AgentRuntimeContractTests(unittest.TestCase):
         with self.assertRaises(AssertionError):
             assert_orchestration_contract(mutated)
 
-    def test_diagnostic_discovery_wording_is_not_globally_forbidden(self):
-        text = AGENT.read_text(encoding="utf-8")
-        diagnostic = (
-            "Code Mode / programmatic discovery 可以作为 runtime diagnostics 记录，"
-            "但绝不能作为 delegation prerequisite 或 blocker 依据。"
-        )
-        mutated = text.replace(
-            "## 输入（由 task prompt 传入）",
-            diagnostic + "\n\n## 输入（由 task prompt 传入）",
-            1,
-        )
-        assert_orchestration_contract(mutated)
-
-    def test_direct_native_contract_does_not_hardcode_private_tool_surface(self):
-        """The contract names the public tool only: no call signature, private
-        namespace, request schema or undocumented event field."""
+    def test_codex_contract_covers_direct_and_deferred_tool_surfaces(self):
+        """The producer must work on both Codex tool exposure modes."""
         text = AGENT.read_text(encoding="utf-8")
         self.assertIn("`spawn_agent`", text)
-        self.assertNotIn("multi_agent_v1__", text)
-        self.assertNotIn("ALL_TOOLS", text)
-        self.assertNotIn("spawn_agent(", text)
-        self.assertNotIn("functions.exec", text)
+        self.assertIn("`ALL_TOOLS`", text)
+        self.assertIn("exact callable", text)
+        self.assertNotIn("if (typeof tools.spawn_agent", text)
+        self.assertNotIn('throw new Error("spawn_agent not exposed")', text)
 
     def test_required_child_failure_never_gets_a_guessed_result(self):
         """PA-DIRECT-04: every surface that owns the child-failure invariant keeps

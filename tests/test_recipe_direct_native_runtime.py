@@ -58,8 +58,8 @@ def test_runtime_prerequisite_configs_are_pinned_and_derived_from_the_topology()
     config = _section("## 8. Runtime configuration", "## 9. Fixed input / prompt")
     assert "4 = 1 outer child + 3 nested leaves" in config
     assert "2 = outer child depth 1 + nested leaves depth 2" in config
-    assert "Codex V1 default `agents.max_depth=1`" in config
-    assert "outer child 的 collaboration tools" in config
+    assert "避免结果依赖宿主配置或共享 app-server 的启动时快照" in config
+    assert "不是对历史失败原因的归因" in config
     assert "test resource ceiling" in config
     assert "不是 `paper-analysis` 的产品业务上限" in config
     assert "不得临场提高 ceiling" in config
@@ -127,15 +127,26 @@ def test_projection_check_locks_new_contract_and_retired_mechanism() -> None:
     projection = _section("## 7. Generated projection check", "## 8.")
     required = projection.split("required = {", 1)[1].split("\n}", 1)[0]
     retired = projection.split("retired = {", 1)[1].split("\n}", 1)[0]
-    assert required.count('": "') == 12
-    assert retired.count('": "') == 7
+    assert required.count('": "') == 15
+    assert retired.count('": "') == 6
     assert "assert all(checks.values())" in projection
     assert "assert not any(retired_found.values())" in projection
     assert '"code_mode": "Code Mode"' not in retired
     assert '"programmatic": "programmatic"' not in retired
     assert '"discovery": "discovery"' not in retired
     assert '"legacy_preflight"' in retired
-    assert "`spawn_agent` 多代理工具来分派三个有界只读分析工作单元" in projection
+    assert '"executable_false_probe"' in retired
+    assert "先绑定当前调用面实际提供的 subagent spawn capability" in projection
+    assert "从 `ALL_TOOLS` 按工具说明定位 spawn capability" in projection
+
+
+def test_pass_checklist_matches_projection_checker_counts() -> None:
+    text = _recipe_text()
+    passed = _slice(text, "### PASS", "### FAIL_PRODUCER")
+    assert "15 条 direct/deferred-surface" in passed
+    assert "6 条 retired false-failure clauses" in passed
+    assert "12 条 direct-native" not in passed
+    assert "7 条 retired discovery-preflight/private-mechanism" not in passed
 
 
 def test_identity_and_prose_surfaces_stay_out_of_the_verdict() -> None:

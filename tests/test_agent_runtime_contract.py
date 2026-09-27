@@ -97,9 +97,9 @@ CODEX_FULL_DELEGATION_MARKERS = (
 )
 
 # Direct-native delegation contract (issue #16): Codex full-mode Step 3 calls the
-# public `spawn_agent` tool as the required action, never a capability-probe
-# preflight, and may only report a delegation blocker after that real call
-# returns a machine-level failure. Shell/curl/new-eval remain non-fallbacks.
+# public `spawn_agent` tool directly, never through a capability-probe preflight,
+# and may only report a delegation blocker after that real call returns a
+# machine-level failure. Shell/curl/new-eval remain non-fallbacks.
 CODEX_STEP3_DIRECT_NATIVE_MARKERS = (
     "required Step-3 child 必须靠直接调用当前 Codex 运行时暴露的公开 "
     "`spawn_agent` 多代理工具来分派三个有界只读分析工作单元，随后等待并消费三路结果",
@@ -512,14 +512,14 @@ class AgentRuntimeContractTests(unittest.TestCase):
         text = AGENT.read_text(encoding="utf-8")
         step3 = text.split("### Step 3 — 并行子代理", 1)[1].split("### Step 4", 1)[0]
         self.assertIn(
-            "required Step-3 child 的第一项动作必须是直接调用当前 Codex 运行时暴露的"
+            "required Step-3 child 必须直接调用当前 Codex 运行时暴露的"
             "公开 `spawn_agent` 多代理工具",
             step3,
         )
         self.assertIn("不得先等工具目录或能力探测出结论", step3)
         self.assertIn("三路调用都发起后，等待并消费三路 child 返回的 Markdown", step3)
         attempt_order = (
-            step3.index("required Step-3 child 的第一项动作必须是直接调用"),
+            step3.index("required Step-3 child 必须直接调用"),
             step3.index("三路调用都发起后，等待并消费三路 child 返回的 Markdown"),
             step3.index("才进入 Step 4"),
         )

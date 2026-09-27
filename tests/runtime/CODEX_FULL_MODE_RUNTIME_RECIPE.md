@@ -9,7 +9,7 @@ Step 3 instead of inlining the three-way analysis.
 issue 文本；issue 只描述目标，本文描述可执行步骤与判定。
 
 Contract authority：issue #16 的 `Frozen Acceptance Contract`
-（`PA-DIRECT-01..06`）是本 case 当前的验收来源。issue #13 / PR #14 只保留
+（`PA-SURFACE-01..04`）是本 case 当前的验收来源。issue #13 / PR #14 只保留
 问题与实现的历史 provenance；#15 的重复 runtime smoke 与 blanket SHA
 invalidation 设计不再生效。旧 `PA-CODEX-NESTED-CAP-00` V1 capability
 characterization 不再是本 case 的前置，其历史证据留在 #13 / #14。
@@ -45,7 +45,7 @@ runtime agent identity。
   - OpenCode runtime compatibility；
   - child 语义结果是否已被 coordinator 消费（wait→consume 由
     `PA-DIRECT-DET-01` 的 producer contract assertions 负责）；
-  - delegation blocker 归因（`PA-DIRECT-03` 的 zero-attempt 禁止与
+  - delegation blocker 归因（`PA-SURFACE-03` 的 zero-attempt 禁止与
     machine-level failure 前置由 `PA-DIRECT-DET-01` 负责；本 case 不注入
     synthetic failure，也不新增第二个 runtime case）。
 

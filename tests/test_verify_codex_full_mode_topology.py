@@ -322,7 +322,7 @@ def test_fail_producer_outer_child_with_four_nested_children() -> None:
 
 
 def test_not_tested_when_outer_child_has_no_nested_child() -> None:
-    """PA-DIRECT-03 boundary: an absent formal nested edge is unobservable
+    """PA-SURFACE-03 boundary: an absent formal nested edge is unobservable
     delegation on this evidence surface, never a producer FAIL and never a
     guessed runtime failure."""
 

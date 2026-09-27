@@ -99,7 +99,7 @@ delegation-failure gate，也不为它构造 synthetic case（issue #16 §4）�
 - `/eval.version` 记录 provenance；`version == null` → `BLOCKED`；
 - 非 null 版本字符串变化本身不 BLOCK / FAIL；
 - 当前 runtime 若不再提供 contract 所需 formal topology 字段 →
-  `BLOCKED` / `INVALID_EVIDENCE`，并保存原始 response 做 characterization。
+  `BLOCKED` / `INVALID_TEST_EXECUTION`，并保存原始 response 做 characterization。
 
 ## 3. Prerequisites
 
@@ -723,20 +723,20 @@ identity surface。
 
 verifier 必须执行：
 
-1. 顶层 `/eval.passed` 是 boolean；不是 boolean → `INVALID_EVIDENCE`；
+1. 顶层 `/eval.passed` 是 boolean；不是 boolean → `INVALID_TEST_EXECUTION`；
    该字段的 true/false 值只作为 harness summary metadata，不得在 formal
    topology 解析前充当全局 veto，也不得反转已证明的 topology；
 2. `version` 非 null 且非空字符串，原样记录 provenance；null → `BLOCKED`；
-   非 string 非 null → `INVALID_EVIDENCE`；
+   非 string 非 null → `INVALID_TEST_EXECUTION`；
 3. 从 `output.thread_id` 取得 root thread id；缺失/非字符串 →
-   `INVALID_EVIDENCE`；
+   `INVALID_TEST_EXECUTION`；
 4. 从 `output.app_server_events` 按 pinned contract 提取 formal
    `spawnAgent` ownership（`item/started` | `item/completed`、
    `message.params.item`、`item.type == collabAgentToolCall`、
    `item.tool == spawnAgent`）；先读取并校验 `receiverThreadIds`：
    `item/started` 没有 concrete receiver 时忽略（即使没有
    `senderThreadId`），`item/completed` 没有 concrete receiver 时判
-   `INVALID_EVIDENCE`；只有存在 concrete receiver 后才要求非空
+   `INVALID_TEST_EXECUTION`；只有存在 concrete receiver 后才要求非空
    `senderThreadId`；
 5. dedupe started/completed 的同一 formal edge；
 6. root direct formal child 数量：`0` → `BLOCKED`；`>1` → `BLOCKED`；
@@ -747,7 +747,7 @@ verifier 必须执行：
 8. formal ownership/malformed evidence 冲突（`app_server_events` entry 或
    `message` wrapper 缺失/非 object、completed spawn 无 concrete receiver、
    relation shape 损坏、同一 child 被不同 sender claim、contract 未声明
-   formal spawn 规则）→ `INVALID_EVIDENCE`。
+   formal spawn 规则）→ `INVALID_TEST_EXECUTION`。
 
 第 7 步的 `==0` 与 `1/2`、`>3` 必须区分：pinned evidence surface 上“formal
 edge 不存在”只是 delegation unobservable，不是外部 native-delegation
@@ -786,7 +786,7 @@ verifier nested_direct_child_count == issue 表 outer_nested_direct_child_count
 ```
 
 verifier 退出码：`0` PASS、`1` FAIL_PRODUCER、`2` BLOCKED、
-`3` INVALID_EVIDENCE、`4` NOT_TESTED。exit code 与
+`3` INVALID_TEST_EXECUTION、`4` NOT_TESTED。exit code 与
 `producer_status` 必须一致；不一致属 evidence 问题。
 
 ## 12. Producer deterministic suite
@@ -875,7 +875,7 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
 | 机器状态 | Verdict |
 | --- | --- |
 | 未越过 §4–§8、§10 `CASE_STARTED` 边界 | `CASE_NOT_STARTED` |
-| malformed / conflicting / contaminated evidence | `INVALID_EVIDENCE`（产品层即 `INVALID_TEST_EXECUTION`） |
+| malformed / conflicting / contaminated evidence | `INVALID_TEST_EXECUTION` |
 | `version` 为 null、provider/model unavailable | `BLOCKED` |
 | `root_direct_child_count != 1` | `BLOCKED` |
 | `root_direct_child_count == 1` 且 nested `== 3`，ownership valid | `PASS` |
@@ -985,10 +985,9 @@ contradiction 均不改变上述 topology verdict。**
 **不得因为 `agent_type=default`、identity 不可观察或 identity mismatch 判
 BLOCKED。不得从 `nested == 0` 猜出 runtime blocker。**
 
-### INVALID_EVIDENCE
+### INVALID_TEST_EXECUTION
 
-只限 formal topology / source evidence 本身损坏或自相矛盾（产品层对应
-`INVALID_TEST_EXECUTION`）：
+只限 formal topology / source evidence 本身损坏或自相矛盾：
 
 - `eval-response.json` malformed；
 - `passed` 不是 boolean，或 `version` 是非 null 的非字符串；
@@ -998,7 +997,7 @@ BLOCKED。不得从 `nested == 0` 猜出 runtime blocker。**
 - source isolation / manual patch / provenance 证据自相矛盾；
 - evidence 被 test setup 以外的方式污染（例如改写过 raw response）。
 
-**identity contradiction 不属于本 case 的 `INVALID_EVIDENCE` 条件。**
+**identity contradiction 不属于本 case 的 `INVALID_TEST_EXECUTION` 条件。**
 
 ### NOT TESTED
 
@@ -1048,7 +1047,7 @@ Recipe 预定义的可重试 transport 条件。
 - `BLOCKED`（provider / harness transient）只在上述同一冻结输入下做有界
   retry；不得临场提高 ceiling、放宽 sandbox、改 prompt 或手动告诉 outer
   child spawn；
-- `INVALID_EVIDENCE` 不得通过 retry-until-green 覆盖，必须先修复损坏或矛盾
+- `INVALID_TEST_EXECUTION` 不得通过 retry-until-green 覆盖，必须先修复损坏或矛盾
   的 evidence/source；
 - test setup contamination（purity preflight 失败或安装树被 test-only
   artifacts 污染）按 `CASE_NOT_STARTED` 处理：此时观察到的任何 topology
@@ -1089,6 +1088,6 @@ Recipe 预定义的可重试 transport 条件。
 - 未命中 dependency 的 producer/fixture SHA 变化属 `REUSE_PRIOR_PASS`，需
   写明该 diff 未触及上述任何一项；
 - Codex runtime version 变化只更新 provenance；只有 formal topology
-  surface 真正不兼容时才 `BLOCKED` / `INVALID_EVIDENCE`，并保存真实输出
+  surface 真正不兼容时才 `BLOCKED` / `INVALID_TEST_EXECUTION`，并保存真实输出
   characterization；
 - 旧执行不得记作当前执行；重新判定若不再 PASS，如实记录新结果。

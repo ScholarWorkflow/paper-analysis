@@ -14,6 +14,7 @@ import pathlib
 import subprocess
 import sys
 
+import verify_codex_full_mode_topology as verifier
 from verify_codex_full_mode_topology import (
     CASE_ID,
     EXIT_CODES,
@@ -21,7 +22,7 @@ from verify_codex_full_mode_topology import (
     SCHEMA,
     STATUS_BLOCKED,
     STATUS_FAIL_PRODUCER,
-    STATUS_INVALID_EVIDENCE,
+    STATUS_INVALID_TEST_EXECUTION,
     STATUS_NOT_TESTED,
     STATUS_PASS,
     verify_topology,
@@ -380,7 +381,7 @@ def test_pass_is_not_reversed_by_out_of_scope_downstream_failure() -> None:
         assert verdict["schema"] == SCHEMA
 
 
-# --- INVALID_EVIDENCE ---------------------------------------------------------
+# --- INVALID_TEST_EXECUTION ---------------------------------------------------
 
 
 def test_invalid_completed_spawn_without_concrete_receivers() -> None:
@@ -389,7 +390,7 @@ def test_invalid_completed_spawn_without_concrete_receivers() -> None:
         spawn(OUTER_THREAD, [], method="item/completed"),
     ]
     verdict = verify_topology(eval_response(events), contract())
-    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+    assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION
 
 
 def test_invalid_started_spawn_with_concrete_receivers_without_sender() -> None:
@@ -398,7 +399,7 @@ def test_invalid_started_spawn_with_concrete_receivers_without_sender() -> None:
         spawn(OUTER_THREAD, [NESTED_A], method="item/started", include_sender=False),
     ]
     verdict = verify_topology(eval_response(events), contract())
-    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+    assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION
 
 
 def test_invalid_completed_spawn_without_concrete_receivers_and_sender() -> None:
@@ -407,7 +408,7 @@ def test_invalid_completed_spawn_without_concrete_receivers_and_sender() -> None
         spawn(OUTER_THREAD, [], method="item/completed", include_sender=False),
     ]
     verdict = verify_topology(eval_response(events), contract())
-    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+    assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION
 
 
 def test_invalid_missing_receiver_thread_ids_on_completed_spawn() -> None:
@@ -416,7 +417,7 @@ def test_invalid_missing_receiver_thread_ids_on_completed_spawn() -> None:
         spawn(OUTER_THREAD, None),
     ]
     verdict = verify_topology(eval_response(events), contract())
-    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+    assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION
 
 
 def test_invalid_same_child_claimed_by_different_senders() -> None:
@@ -426,7 +427,7 @@ def test_invalid_same_child_claimed_by_different_senders() -> None:
         spawn(ROOT_THREAD, [NESTED_A]),
     ]
     verdict = verify_topology(eval_response(events), contract())
-    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+    assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION
 
 
 def test_invalid_malformed_event_shapes() -> None:
@@ -453,18 +454,18 @@ def test_invalid_malformed_event_shapes() -> None:
     for label, events in cases.items():
         response = eval_response(events)
         verdict = verify_topology(response, contract())
-        assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, label
+        assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION, label
     response = eval_response()
     response["output"]["app_server_events"] = "nope"
     verdict = verify_topology(response, contract())
-    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, "events not a list"
+    assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION, "events not a list"
 
 
 def test_invalid_missing_or_malformed_message_envelopes() -> None:
     for malformed in ({}, {"message": None}, {"message": "not-object"}):
         response = eval_response([*healthy_events(), malformed])
         verdict = verify_topology(response, contract())
-        assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, malformed
+        assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION, malformed
 
 
 def test_invalid_malformed_dispatch_envelopes_fail_closed() -> None:
@@ -489,7 +490,7 @@ def test_invalid_malformed_dispatch_envelopes_fail_closed() -> None:
                 [spawn(ROOT_THREAD, [OUTER_THREAD]), malformed]
             )
             verdict = verify_topology(response, contract())
-            assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, (
+            assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION, (
                 method,
                 label,
             )
@@ -509,20 +510,73 @@ def test_invalid_common_gate_shapes() -> None:
     }
     for label, response in cases.items():
         verdict = verify_topology(response, contract())
-        assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE, label
+        assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION, label
 
 
 def test_invalid_when_contract_lacks_formal_spawn_declaration() -> None:
     broken = contract()
     del broken["raw_identity_path"]
     verdict = verify_topology(eval_response(healthy_events()), broken)
-    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+    assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION
 
 
 def test_invalid_when_contract_is_not_pinned_revision() -> None:
     drifted = {**contract(), "contract_id": "skills-test-fixtures/codex-eval-adapter@8"}
     verdict = verify_topology(eval_response(healthy_events()), drifted)
-    assert verdict["producer_status"] == STATUS_INVALID_EVIDENCE
+    assert verdict["producer_status"] == STATUS_INVALID_TEST_EXECUTION
+
+
+# --- verdict vocabulary contract ----------------------------------------------
+
+RECIPE_PATH = (
+    pathlib.Path(__file__).resolve().parent / "runtime" / "CODEX_FULL_MODE_RUNTIME_RECIPE.md"
+)
+VERIFIER_PATH = (
+    pathlib.Path(__file__).resolve().parent
+    / "runtime/verify_codex_full_mode_topology.py"
+)
+
+# The single name the issue #16 verdict table and Test Engineer Rule §4 give the
+# "fixture, execution or evidence invalid/contradictory/contaminated" terminal
+# state. A second name for the same state lets executors reach two verdicts.
+INVALID_TEST_EXECUTION = "INVALID_TEST_EXECUTION"
+
+
+def test_invalid_evidence_terminal_state_owns_one_verdict_name() -> None:
+    assert verifier.EXIT_CODES[INVALID_TEST_EXECUTION] == 3
+    assert "INVALID_EVIDENCE" not in verifier.EXIT_CODES
+
+
+def test_cli_malformed_evidence_reports_the_case_verdict_name(
+    tmp_path: pathlib.Path,
+) -> None:
+    drifted_contract = tmp_path / "contract.json"
+    drifted_contract.write_text(
+        json.dumps({"contract_id": "unrelated-contract"}), encoding="utf-8"
+    )
+    response_path = tmp_path / "response.json"
+    response_path.write_text(
+        json.dumps(eval_response(healthy_events())), encoding="utf-8"
+    )
+    out_path = tmp_path / "verdict.json"
+
+    result = _run_verifier(VERIFIER_PATH, drifted_contract, response_path, out_path)
+
+    assert result.returncode == 3, result.stderr
+    verdict = json.loads(out_path.read_text(encoding="utf-8"))
+    assert verdict["producer_status"] == INVALID_TEST_EXECUTION
+    assert f"producer_status: {INVALID_TEST_EXECUTION}" in result.stderr
+
+
+def test_recipe_verdict_vocabulary_matches_the_verifier() -> None:
+    recipe = RECIPE_PATH.read_text(encoding="utf-8")
+    assert (
+        "| malformed / conflicting / contaminated evidence"
+        " | `INVALID_TEST_EXECUTION` |"
+    ) in recipe
+    assert "`3` INVALID_TEST_EXECUTION" in recipe
+    assert "INVALID_EVIDENCE" not in recipe
+    assert "INVALID_EVIDENCE" not in VERIFIER_PATH.read_text(encoding="utf-8")
 
 
 # --- CLI ----------------------------------------------------------------------

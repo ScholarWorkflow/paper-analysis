@@ -89,7 +89,7 @@ def test_dirty_producer_is_case_not_started_and_not_a_case_verdict() -> None:
     assert "CASE_NOT_STARTED" in case_not_started
     # A bootstrap stop must not be re-labelled as a runtime case verdict: the
     # BLOCKED list may not claim the dirty-producer branch back.
-    blocked = _slice(recipe, "### BLOCKED", "### INVALID_EVIDENCE")
+    blocked = _slice(recipe, "### BLOCKED", "### INVALID_TEST_EXECUTION")
     assert "producer checkout dirty" not in blocked
     assert "producer checkout dirty" not in _slice(
         recipe, "### FAIL_PRODUCER", "### BLOCKED"

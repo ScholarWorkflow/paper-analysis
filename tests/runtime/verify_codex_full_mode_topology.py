@@ -40,7 +40,7 @@ Producer statuses (issue #16 verdict table):
                        blamed for this run
 * ``BLOCKED``          availability/harness gap: runtime version absent, or
                        the root thread has zero or multiple formal direct children
-* ``INVALID_EVIDENCE`` malformed evidence or mutually contradictory formal
+* ``INVALID_TEST_EXECUTION`` malformed evidence or mutually contradictory formal
                        ownership (completed spawn without concrete receivers,
                        malformed relation shape, one child claimed by
                        different senders, contract without the formal
@@ -48,7 +48,7 @@ Producer statuses (issue #16 verdict table):
 
 The runtime ``version`` string is recorded as provenance only; a version
 change alone never blocks, fails or passes a run. Exit codes: 0 PASS,
-1 FAIL_PRODUCER, 2 BLOCKED, 3 INVALID_EVIDENCE, 4 NOT_TESTED.
+1 FAIL_PRODUCER, 2 BLOCKED, 3 INVALID_TEST_EXECUTION, 4 NOT_TESTED.
 """
 
 from __future__ import annotations
@@ -67,12 +67,12 @@ STATUS_PASS = "PASS"
 STATUS_FAIL_PRODUCER = "FAIL_PRODUCER"
 STATUS_NOT_TESTED = "NOT_TESTED"
 STATUS_BLOCKED = "BLOCKED"
-STATUS_INVALID_EVIDENCE = "INVALID_EVIDENCE"
+STATUS_INVALID_TEST_EXECUTION = "INVALID_TEST_EXECUTION"
 EXIT_CODES = {
     STATUS_PASS: 0,
     STATUS_FAIL_PRODUCER: 1,
     STATUS_BLOCKED: 2,
-    STATUS_INVALID_EVIDENCE: 3,
+    STATUS_INVALID_TEST_EXECUTION: 3,
     STATUS_NOT_TESTED: 4,
 }
 
@@ -271,12 +271,12 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
 
     if not isinstance(contract, dict):
         return _verdict(
-            STATUS_INVALID_EVIDENCE, ["contract must be a JSON object"]
+            STATUS_INVALID_TEST_EXECUTION, ["contract must be a JSON object"]
         )
     rules, problems = _contract_rules(contract)
     if problems:
         return _verdict(
-            STATUS_INVALID_EVIDENCE,
+            STATUS_INVALID_TEST_EXECUTION,
             ["contract does not declare the formal spawn relation rules: " + "; ".join(problems)],
             contract_id=contract.get("contract_id")
             if isinstance(contract.get("contract_id"), str)
@@ -285,7 +285,7 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
 
     if not isinstance(eval_response, dict):
         return _verdict(
-            STATUS_INVALID_EVIDENCE,
+            STATUS_INVALID_TEST_EXECUTION,
             ["eval response must be a JSON object"],
             contract_id=contract["contract_id"],
         )
@@ -294,7 +294,7 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
     passed = eval_response.get("passed")
     if not isinstance(passed, bool):
         return _verdict(
-            STATUS_INVALID_EVIDENCE,
+            STATUS_INVALID_TEST_EXECUTION,
             [
                 "eval response top-level passed must be a boolean; without it "
                 "the harness outcome is not machine-readable"
@@ -314,7 +314,7 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
         )
     if not isinstance(version, str):
         return _verdict(
-            STATUS_INVALID_EVIDENCE,
+            STATUS_INVALID_TEST_EXECUTION,
             [
                 "eval response version must be a string or null, got "
                 f"{type(version).__name__}"
@@ -340,7 +340,7 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
     )
     if not isinstance(root_thread_id, str) or not root_thread_id:
         return _verdict(
-            STATUS_INVALID_EVIDENCE,
+            STATUS_INVALID_TEST_EXECUTION,
             ["eval response output.thread_id must be a non-empty string"],
             eval_version=version,
             contract_id=contract["contract_id"],
@@ -360,7 +360,7 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
     )
     if parse_problems:
         return _verdict(
-            STATUS_INVALID_EVIDENCE,
+            STATUS_INVALID_TEST_EXECUTION,
             parse_problems,
             root_thread_id=root_thread_id,
             eval_version=version,
@@ -373,7 +373,7 @@ def verify_topology(eval_response: dict, contract: dict) -> dict:
     )
     if conflicted:
         return _verdict(
-            STATUS_INVALID_EVIDENCE,
+            STATUS_INVALID_TEST_EXECUTION,
             [
                 "conflicting formal ownership: child thread(s) "
                 f"{conflicted} are claimed by formal {rules['formal_tool']} "
@@ -512,7 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             contract = json.load(handle)
     except (OSError, json.JSONDecodeError) as error:
         verdict = _verdict(
-            STATUS_INVALID_EVIDENCE,
+            STATUS_INVALID_TEST_EXECUTION,
             [f"cannot read eval response or contract JSON: {error}"],
         )
     else:

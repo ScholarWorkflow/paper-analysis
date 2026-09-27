@@ -249,7 +249,7 @@ Title / 作者 / 期刊·会议 / 年份 / DOI / 本地 PDF 路径(有则)
 
 ### Step 3 — 并行子代理（Spawn 拓扑 · 拆 3 方向）
 
-将全文放入临时文件后，Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元，分别对应表中的三路语义角色；三路结果必须全部来自 delegated child，coordinator 不得 inline 完成或降级为 best-effort。分派是硬门槛：required Step-3 child 的第一项动作必须是直接调用当前 Codex 运行时暴露的公开 `spawn_agent` 多代理工具（OpenCode 运行时即原生 `task`），不得先等工具目录或能力探测出结论，也不因某处没列出该工具就改判能力不可用；三路调用都发起后，等待并消费三路 child 返回的 Markdown，才进入 Step 4。这里只固定公开工具名，不固定私有 namespace、参数 schema、request schema 或未文档化的 runtime event 字段。只有 `spawn_agent` 的真实调用返回 runtime machine-level delegation failure 时，才允许把本次运行报告成 delegation blocker；本次未真实发起 required 委派调用时禁止该结论，必须先把调用发出去。`exec_command` shell、`codex exec`、`opencode run`、curl、另起 `/eval` 都不是 delegation fallback，走任一替代路径都算违反本 contract。每个工作单元只接收全文路径、角色和产出要求，直接返回 Markdown，不修改文件；某一路失败就明确报告，不得由 coordinator 猜测、补写或伪造该路结果。
+将全文放入临时文件后，Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元，分别对应表中的三路语义角色；三路结果必须全部来自 delegated child，coordinator 不得 inline 完成或降级为 best-effort。分派是硬门槛：required Step-3 child 必须直接调用当前 Codex 运行时暴露的公开 `spawn_agent` 多代理工具（OpenCode 运行时即原生 `task`），不得先等工具目录或能力探测出结论，也不因某处没列出该工具就改判能力不可用；三路调用都发起后，等待并消费三路 child 返回的 Markdown，才进入 Step 4。这里只固定公开工具名，不固定私有 namespace、参数 schema、request schema 或未文档化的 runtime event 字段。只有 `spawn_agent` 的真实调用返回 runtime machine-level delegation failure 时，才允许把本次运行报告成 delegation blocker；本次未真实发起 required 委派调用时禁止该结论，必须先把调用发出去。`exec_command` shell、`codex exec`、`opencode run`、curl、另起 `/eval` 都不是 delegation fallback，走任一替代路径都算违反本 contract。每个工作单元只接收全文路径、角色和产出要求，直接返回 Markdown，不修改文件；某一路失败就明确报告，不得由 coordinator 猜测、补写或伪造该路结果。
 
 | 子代理 | 方向 | 产出（返回的 Markdown） |
 |---|---|---|

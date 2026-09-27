@@ -2,9 +2,10 @@
 
 ``PA-CODEX-FULL-LEAF-01`` stays the only real-Codex runtime Merge Gate, but the
 recipe must no longer treat a V1 capability characterization (A′/B′ probes,
-``agents.max_depth``, ``ALL_TOOLS``, ``multi_agent_v1``, Code Mode ``exec``) as
-an acceptance prerequisite, must pin the two frozen runtime prerequisite
-configs, must define the ``CASE_STARTED`` boundary and one verdict per terminal
+``ALL_TOOLS``, ``multi_agent_v1``, Code Mode ``exec``) as an acceptance
+prerequisite, must pin the runtime prerequisite configs required by the frozen
+``root -> outer -> leaves`` topology, must define the ``CASE_STARTED`` boundary
+and one verdict per terminal
 machine state, and must replace the blanket "any SHA change invalidates the
 acceptance" rule with impact-based revalidation.
 """
@@ -36,7 +37,6 @@ def _section(start_marker: str, end_marker: str) -> str:
 def test_retired_capability_characterization_is_no_longer_a_prerequisite() -> None:
     recipe = _recipe_text()
     for retired in (
-        "agents.max_depth",
         "verify_codex_nested_capability_probe",
         "depth_hypothesis",
         "INVALID_CHARACTERIZATION_DESIGN",
@@ -54,8 +54,12 @@ def test_runtime_prerequisite_configs_are_pinned_and_derived_from_the_topology()
     execution = _section("## 10. Execution", "### CASE_STARTED 边界")
     assert '"--config", "agents.enabled=true"' in execution
     assert '"--config", "agents.max_concurrent_threads_per_session=4"' in execution
+    assert '"--config", "agents.max_depth=2"' in execution
     config = _section("## 8. Runtime configuration", "## 9. Fixed input / prompt")
     assert "4 = 1 outer child + 3 nested leaves" in config
+    assert "2 = outer child depth 1 + nested leaves depth 2" in config
+    assert "Codex V1 default `agents.max_depth=1`" in config
+    assert "outer child 的 collaboration tools" in config
     assert "test resource ceiling" in config
     assert "不是 `paper-analysis` 的产品业务上限" in config
     assert "不得临场提高 ceiling" in config

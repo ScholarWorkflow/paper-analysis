@@ -120,8 +120,9 @@ export EVAL_SERVER_DIR=/absolute/path/to/eval-server
 - 不直接 shell 执行 `codex`；
 - consumer 在 producer repo / worktrees 外；
 - 无 local path / symlink / editable / copied artifact / manual patch；
-- runtime prerequisite config 固定为 §8 的 `agents.enabled=true` 与
-  `agents.max_concurrent_threads_per_session=4`，执行前已确定，不在观察到
+- runtime prerequisite config 固定为 §8 的 `agents.enabled=true`、
+  `agents.max_concurrent_threads_per_session=4` 与 `agents.max_depth=2`，
+  执行前已确定，不在观察到
   不理想结果后修改。
 
 revision 变化不自动触发整案重跑：是否复用旧 PASS 由 §17 的 declared
@@ -452,20 +453,27 @@ fi
 
 ## 8. Runtime configuration prerequisites and resolved-config record
 
-正式 eval request 固定携带两条 runtime prerequisite config：
+正式 eval request 固定携带三条 runtime prerequisite config：
 
 ```text
 --config agents.enabled=true
 --config agents.max_concurrent_threads_per_session=4
+--config agents.max_depth=2
 ```
 
 - `4 = 1 outer child + 3 nested leaves`。主线程不计入该 spawned-agent
   thread ceiling；这是本 case 从其冻结拓扑（§1 的 `root -> 1 -> 3`）推导出的
   **test resource ceiling**，不是 `paper-analysis` 的产品业务上限，也不得
   写成跨 case 默认值；
+- `2 = outer child depth 1 + nested leaves depth 2`。固定 Codex V1 default `agents.max_depth=1`
+  只允许 root 创建 outer child；当 outer child 尝试继续委派时，
+  runtime 会因下一层超过上限而隐藏 outer child 的 collaboration tools。
+  因此 `agents.max_depth=2` 是冻结拓扑的最小
+  runtime prerequisite，不是 capability probe，也不改变产品委派数量；
 - 该值在 §10 执行之前就已确定。任何失败之后都不得临场提高 ceiling、换
   model、提高 reasoning 或放宽 sandbox（§16）；
-- `agents.enabled` / `agents.max_concurrent_threads_per_session` 都是无歧义
+- `agents.enabled` / `agents.max_concurrent_threads_per_session` /
+  `agents.max_depth` 都是无歧义
   dotted key + bool/int TOML value，按 eval-server 的 `--config` 语义映射到
   本 eval 的 `thread/start.config`，不影响共享 app-server 进程或其他 eval；
 - 如果 runtime 在该 config 下拒绝 `thread/start`（HTTP 400 或 runtime
@@ -498,12 +506,15 @@ record = {
     "before_override": {
         "agents.enabled": None,
         "agents.max_concurrent_threads_per_session": None,
+        "agents.max_depth": None,
     },
     "after_override": {
         "agents.enabled": True,
         "agents.max_concurrent_threads_per_session": 4,
+        "agents.max_depth": 2,
     },
     "ceiling_derivation": "4 = 1 formal outer child + 3 formal nested leaves; root/main thread not counted",
+    "depth_derivation": "2 = outer child depth 1 + nested leaves depth 2",
     "ceiling_kind": "test resource ceiling derived from the frozen topology; not a product business limit",
     "effective_readback_field": "output.thread_start_effective",
     "agents_keys_readback": "not_reported_by_pinned_surface",
@@ -602,6 +613,7 @@ args = [
     # §8 frozen runtime prerequisites (test resource ceiling, not a product limit)
     "--config", "agents.enabled=true",
     "--config", "agents.max_concurrent_threads_per_session=4",
+    "--config", "agents.max_depth=2",
     # Project trust must use the dotted per-run override surface documented
     # by adapter@9 (raw_identity_path.characterization_basis); an inline
     # projects={...} map is rejected by the pinned runtime at thread/start.
@@ -889,7 +901,7 @@ checkout dirty 分支保存诊断。不要求 `adapter.json`，因为 shared ada
 - generated Codex projection 通过 §7 全部 checks：12 条 direct-native
   contract markers 全在，且 7 条 retired discovery-preflight/private-mechanism
   clauses 全不在；普通诊断词不作为全局禁词；
-- §8 的两条 runtime prerequisite config 原样出现在
+- §8 的三条 runtime prerequisite config 原样出现在
   `output/eval-request.json`，ceiling 为 `4`；
 - `output/case-status.txt` 为 `CASE_STARTED`；
 - `/eval.passed` 具有合法 boolean shape，version 有 provenance；`passed`
@@ -918,6 +930,7 @@ PR evidence 对本 case 的 runtime prerequisite 只写事实：
 Codex runtime prerequisites pinned for this acceptance:
 agents.enabled=true
 agents.max_concurrent_threads_per_session=4 (test resource ceiling)
+agents.max_depth=2 (minimum required by root -> outer -> nested topology)
 agents.* effective value: not reported by the pinned /eval surface
 ```
 
@@ -1056,7 +1069,8 @@ Recipe 预定义的可重试 transport 条件。
 - `paper-analysis` Codex delegation instructions（`.apm/agents/paper-analysis.agent.md`）；
 - generated `.codex/agents/paper-analysis.toml` projection；
 - `tests/runtime/verify_codex_full_mode_topology.py` 与其 evidence contract；
-- `agents.enabled` / `agents.max_concurrent_threads_per_session` 等正式
+- `agents.enabled` / `agents.max_concurrent_threads_per_session` /
+  `agents.max_depth` 等正式
   runtime prerequisite；
 - `skills-test-fixtures` revision 与 `codex-eval-adapter` contract id；
 - 固定 prompt（`config/root-prompt.txt`）、consumer install path、APM 版本、

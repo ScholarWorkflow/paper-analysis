@@ -528,7 +528,7 @@ class AgentRuntimeContractTests(unittest.TestCase):
         )
 
     def test_codex_step3_attempt_requirement_precedes_blocker_permission(self):
-        """PA-DIRECT-03: the attempt requirement is stated before, and gates, the
+        """PA-SURFACE-03: the attempt requirement is stated before, and gates, the
         only condition under which a delegation blocker is allowed."""
         text = AGENT.read_text(encoding="utf-8")
         conventions = _section(text, "## 交互与运行时兼容约定", "## 输入（由 task prompt 传入）")
@@ -575,7 +575,7 @@ class AgentRuntimeContractTests(unittest.TestCase):
         self.assertNotIn('throw new Error("spawn_agent not exposed")', text)
 
     def test_required_child_failure_never_gets_a_guessed_result(self):
-        """PA-DIRECT-04: every surface that owns the child-failure invariant keeps
+        """PA-SURFACE-04: every surface that owns the child-failure invariant keeps
         its explicit-report / no-guess clause."""
         text = AGENT.read_text(encoding="utf-8")
         for name, start, end, marker in CHILD_FAILURE_SURFACES:

@@ -123,8 +123,8 @@ def test_projection_check_locks_new_contract_and_retired_mechanism() -> None:
     projection = _section("## 7. Generated projection check", "## 8.")
     required = projection.split("required = {", 1)[1].split("\n}", 1)[0]
     retired = projection.split("retired = {", 1)[1].split("\n}", 1)[0]
-    assert required.count('": "') == 12
-    assert retired.count('": "') == 7
+    assert required.count('": "') == 14
+    assert retired.count('": "') == 9
     assert "assert all(checks.values())" in projection
     assert "assert not any(retired_found.values())" in projection
     assert '"code_mode": "Code Mode"' not in retired
@@ -132,6 +132,15 @@ def test_projection_check_locks_new_contract_and_retired_mechanism() -> None:
     assert '"discovery": "discovery"' not in retired
     assert '"legacy_preflight"' in retired
     assert "`spawn_agent` 多代理工具来分派三个有界只读分析工作单元" in projection
+    assert "direct_collaboration_tool_call_surface" in required
+    assert "step3_call_point_direct_surface" in required
+    assert "indirect_exec_caller" in retired
+    assert "private_collaboration_signature" in retired
+    # The deployed direct-call prohibition clause itself names `functions.exec`,
+    # so the projection must reject the indirect caller forms, not that word.
+    assert '"functions.exec"' not in retired
+    assert "tools.spawn_agent" in retired
+    assert "to=functions.collaboration" in retired
 
 
 def test_identity_and_prose_surfaces_stay_out_of_the_verdict() -> None:

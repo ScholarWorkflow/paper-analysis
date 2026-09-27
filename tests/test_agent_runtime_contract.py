@@ -53,6 +53,15 @@ REQUIRED_ORCHESTRATION_CONVENTIONS = (
     ("codex step3 direct native spawn_agent call",
      "required Step-3 child 必须靠直接调用当前 Codex 运行时暴露的公开 "
      "`spawn_agent` 多代理工具来分派三个有界只读分析工作单元，随后等待并消费三路结果"),
+    ("codex step3 direct collaboration tool-call surface",
+     "required Step-3 委派必须走运行时的 direct collaboration tool-call surface："
+     "`spawn_agent` 作为当前 Codex 会话直接暴露的协作工具调用（direct tool call）发起，"
+     "不得包进 Code Mode / `functions.exec` / `exec` 代码执行面，"
+     "也不得改成 `tools.*` namespace 下的同名函数间接调用"),
+    ("codex step3 call point states the direct tool-call surface",
+     "并且这次调用必须走运行时的 direct collaboration tool-call surface"
+     "（把 `spawn_agent` 作为会话直接暴露的协作工具调用发起），不得包进 "
+     "Code Mode / `functions.exec` / `exec` 代码执行面或 `tools.*` namespace 下的同名函数"),
     ("codex step3 no private schema or event field",
      "只固定该公开工具名，不固定私有 namespace、参数 schema、request schema "
      "或未文档化的 runtime event 字段"),
@@ -96,6 +105,26 @@ CODEX_FULL_DELEGATION_MARKERS = (
     "Step 3 必须恰好分派 exactly 3 个有界只读分析工作单元",
 )
 
+# PA-DIRECT-01 keeps the required Step-3 delegation on the runtime's direct
+# collaboration tool-call surface. These are the only two clauses of the Codex
+# delegation contract allowed to name the retired indirect caller; the gate below
+# rejects that caller anywhere else in the same surfaces, while ordinary
+# diagnostic wording outside them stays legal.
+DIRECT_CALL_SURFACE_CLAUSES = (
+    "required Step-3 委派必须走运行时的 direct collaboration tool-call surface："
+    "`spawn_agent` 作为当前 Codex 会话直接暴露的协作工具调用（direct tool call）发起，"
+    "不得包进 Code Mode / `functions.exec` / `exec` 代码执行面，"
+    "也不得改成 `tools.*` namespace 下的同名函数间接调用",
+    "并且这次调用必须走运行时的 direct collaboration tool-call surface"
+    "（把 `spawn_agent` 作为会话直接暴露的协作工具调用发起），不得包进 "
+    "Code Mode / `functions.exec` / `exec` 代码执行面或 `tools.*` namespace 下的同名函数",
+)
+RETIRED_INDIRECT_CALLER_IDENTIFIERS = (
+    "functions.exec",
+    "tools.spawn_agent",
+    "to=functions.collaboration",
+)
+
 # Direct-native delegation contract (issue #16): Codex full-mode Step 3 calls the
 # public `spawn_agent` tool directly, never through a capability-probe preflight,
 # and may only report a delegation blocker after that real call returns a
@@ -110,7 +139,7 @@ CODEX_STEP3_DIRECT_NATIVE_MARKERS = (
     "machine-level delegation failure 时，才允许报告 delegation blocker",
     "`exec_command` shell、`codex exec`、`opencode run`、curl、另起 `/eval` "
     "都不是 delegation fallback",
-)
+) + DIRECT_CALL_SURFACE_CLAUSES
 
 # Retired runtime-specific mechanism (issue #16): reject the old
 # discovery-as-prerequisite relationship and private tool identifiers. Ordinary
@@ -152,12 +181,9 @@ def _section(text: str, start: str, end: str | None) -> str:
     return text[start_index:end_index]
 
 
-def assert_no_retired_discovery_preflight(agent_text: str) -> None:
-    """Reject only the retired delegation preflight contract, not diagnostic words."""
-    private_hits = [
-        marker for marker in RETIRED_PRIVATE_TOOL_IDENTIFIERS if marker in agent_text
-    ]
-    codex_contract = (
+def codex_delegation_region(agent_text: str) -> str:
+    """The two producer surfaces that own the Codex Step 3 delegation contract."""
+    return (
         _section(
             agent_text,
             "## 交互与运行时兼容约定",
@@ -165,6 +191,14 @@ def assert_no_retired_discovery_preflight(agent_text: str) -> None:
         )
         + _section(agent_text, "### Step 3 — 并行子代理", "### Step 4")
     )
+
+
+def assert_no_retired_discovery_preflight(agent_text: str) -> None:
+    """Reject only the retired delegation preflight contract, not diagnostic words."""
+    private_hits = [
+        marker for marker in RETIRED_PRIVATE_TOOL_IDENTIFIERS if marker in agent_text
+    ]
+    codex_contract = codex_delegation_region(agent_text)
     preflight_hits = [
         clause
         for clause in RETIRED_DISCOVERY_PREFLIGHT_CLAUSES
@@ -174,6 +208,32 @@ def assert_no_retired_discovery_preflight(agent_text: str) -> None:
         raise AssertionError(
             "retired Codex discovery-preflight contract present: "
             + ", ".join(private_hits + preflight_hits)
+        )
+
+
+def assert_step3_uses_direct_call_surface(agent_text: str) -> None:
+    """PA-DIRECT-01: the required Step-3 call is a direct collaboration tool call.
+
+    Both delegation surfaces must state it, and the retired code-execution
+    caller may only be named inside those two frozen prohibition clauses.
+    """
+    region = codex_delegation_region(agent_text)
+    remainder = region
+    for clause in DIRECT_CALL_SURFACE_CLAUSES:
+        if clause not in remainder:
+            raise AssertionError(
+                "Codex Step 3 delegation is not stated as a direct collaboration "
+                "tool call: " + clause
+            )
+        remainder = remainder.replace(clause, "", 1)
+    indirect_hits = [
+        identifier for identifier in RETIRED_INDIRECT_CALLER_IDENTIFIERS
+        if identifier in remainder
+    ]
+    if indirect_hits:
+        raise AssertionError(
+            "Codex Step 3 delegation routes the required call through an indirect "
+            "caller surface: " + ", ".join(indirect_hits)
         )
 
 
@@ -194,6 +254,7 @@ def assert_orchestration_contract(agent_text: str) -> None:
             "missing orchestration conventions: " + ", ".join(missing)
         )
     assert_no_retired_discovery_preflight(agent_text)
+    assert_step3_uses_direct_call_surface(agent_text)
 
 
 class AgentRuntimeContractTests(unittest.TestCase):
@@ -580,15 +641,63 @@ class AgentRuntimeContractTests(unittest.TestCase):
         )
         assert_orchestration_contract(mutated)
 
+    def test_step3_delegation_states_the_direct_collaboration_tool_call_surface(self):
+        """PA-DIRECT-01: both delegation surfaces name the direct call surface."""
+        text = AGENT.read_text(encoding="utf-8")
+        region = codex_delegation_region(text)
+        for clause in DIRECT_CALL_SURFACE_CLAUSES:
+            with self.subTest(clause=clause[:32]):
+                self.assertIn(clause, region)
+        assert_step3_uses_direct_call_surface(text)
+
+    def test_legacy_indirect_exec_caller_path_is_rejected(self):
+        """The retired Code Mode -> `tools.*` caller may not return in either surface."""
+        text = AGENT.read_text(encoding="utf-8")
+        legacy = (
+            "required Step-3 委派先在 Code Mode 的 `functions.exec` 内确认 "
+            "`tools.spawn_agent(...)` 可调用，再由该代码执行面发起三路分析。"
+        )
+        for name, anchor in (
+            ("orchestration convention", "## 输入（由 task prompt 传入）"),
+            ("step3 body", "### Step 4"),
+        ):
+            with self.subTest(surface=name):
+                mutated = text.replace(anchor, legacy + "\n\n" + anchor, 1)
+                self.assertIn(legacy, codex_delegation_region(mutated))
+                with self.assertRaises(AssertionError):
+                    assert_step3_uses_direct_call_surface(mutated)
+                with self.assertRaises(AssertionError):
+                    assert_orchestration_contract(mutated)
+
+    def test_indirect_surface_wording_outside_delegation_surfaces_is_accepted(self):
+        """The negative proof is clause- and section-scoped, not a global ban."""
+        text = AGENT.read_text(encoding="utf-8")
+        diagnostic = (
+            "\n- 诊断说明：历史 runtime 曾在 `functions.exec` 与 `tools.*` "
+            "代码执行面上报 delegation 状态；这类记录只用于排查，既不是委派方式，"
+            "也不是 blocker 依据。\n"
+        )
+        assert_step3_uses_direct_call_surface(text)
+        mutated = text + diagnostic
+        self.assertNotIn("诊断说明", codex_delegation_region(mutated))
+        assert_orchestration_contract(mutated)
+
     def test_direct_native_contract_does_not_hardcode_private_tool_surface(self):
         """The contract names the public tool only: no call signature, private
-        namespace, request schema or undocumented event field."""
+        namespace, request schema or undocumented event field. The retired code
+        execution surface is named inside exactly the two frozen prohibition
+        clauses, so it can never be read as the supported call path."""
         text = AGENT.read_text(encoding="utf-8")
         self.assertIn("`spawn_agent`", text)
         self.assertNotIn("multi_agent_v1__", text)
         self.assertNotIn("ALL_TOOLS", text)
         self.assertNotIn("spawn_agent(", text)
-        self.assertNotIn("functions.exec", text)
+        remainder = text
+        for clause in DIRECT_CALL_SURFACE_CLAUSES:
+            self.assertEqual(remainder.count(clause), 1, clause[:32])
+            remainder = remainder.replace(clause, "", 1)
+        for identifier in RETIRED_INDIRECT_CALLER_IDENTIFIERS:
+            self.assertNotIn(identifier, remainder)
 
     def test_required_child_failure_never_gets_a_guessed_result(self):
         """PA-DIRECT-04: every surface that owns the child-failure invariant keeps

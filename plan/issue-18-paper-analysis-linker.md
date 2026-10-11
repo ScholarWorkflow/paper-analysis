@@ -3,7 +3,7 @@
 > 状态：Proposed review status: pending。本文是待审核方案；不得据此宣称计划已批准、实现通过或 PR 可合并。
 >
 > 需求版本：Issue #18（2026-10-11 修订，含 Codex 安装说明）。
-> 计划版本：v1（2026-10-11）。
+> 计划版本：v1.1（2026-10-11；修正已存在 PR 分支的检出与后续提交步骤，其他设计决定及必测清单不变）。
 > 目标仓库：ScholarWorkflow/paper-analysis，基线 master@19eb3e26e8eb7ec60cba1d74efe0f27534c10203。
 > 调用方依据：ScholarWorkflow/professor-contact@41aa5f4a3587bdbb7ea31342c7a5a5d39224f4ed，主技能第 676–683 行。
 > 外部依据：Codex 技能文档（2026-10-11 查询）；uv tools / entry points 文档；microsoft/apm 安装文档（2026-10-11 查询）。本地执行时记录实际 APM、uv、Python 版本。
@@ -113,7 +113,7 @@ paper-analysis-link --root "<业务或教授目录>" --dedup
 
 ## 五、实施顺序（同一 PR 分支继续）
 
-1. **确认基线**：从 `master@19eb3e26` 起建分支；核对本仓库树、历史候选路径和 contact 固定版本文档。若找到可信原件，比较它和第 4 节正式约定，仅恢复兼容部分；不把旧的运行时私有调用规则搬入 Codex。
+1. **检出现有 PR 分支并确认基线**：在 `ScholarWorkflow/paper-analysis` 仓库中检出 PR #19 的既有分支 `plan/issue-18-paper-analysis-linker`；若本地尚无该分支，则从对应远端跟踪分支检出，禁止重新从 `master` 建实施分支或直接在 `master` 修改。执行前记录 `git branch --show-current` 和 `git rev-parse HEAD`，核对 PR 基线 `master@19eb3e26`、本仓库树、历史候选路径和 contact 固定版本文档；后续实现、测试及计划更新均提交并推送到 **同一 PR 分支**。若找到可信原件，比较它和第 4 节正式约定，仅恢复兼容部分；不把旧的运行时私有调用规则搬入 Codex。
 2. **完成纯核心**：创建 `paper_analysis_linker`，先处理目录身份、索引值及路径约束，再做 Markdown 的精确引用更新与只读 `--map`；确保 preview 和 apply 使用同一套决策结果。不要读 Zotero、PDF 或 contact 的状态文件。
 3. **完成去重保护**：实现严格的保护集合、字节比对、引用排除和隔离移动。任何信息不足都跳过；不增加“按标题近似去重”。
 4. **公开 CLI**：完成参数互斥、退出码、摘要提示、构建后端、`project.scripts` 与锁文件。确认正常安装后命令在任意工作目录可执行，未安装工程源码不应被运行时隐式导入。

@@ -36,7 +36,7 @@
 
 - `professor-contact` 已实现的阶段二／三分析链接与 Zotero 引用继续由**现有代码**生成，不改变原文件名、分析文件路径、索引、论文分析正文、证据附属文件、套磁状态或邮件。
 - 无需把 `contact_state.py` 的链接渲染逻辑无条件迁出：它属于当前 `professor-contact` 的可用功能。未来确需迁移这段**已存在**的代码时，必须先有获确认的具体调用方和目标责任归属，再提交独立的实施范围；不在本 Issue 中预授权跨仓库重构。
-- `professor-contact` 主技能文档中宣称存在独立命令的内容应在**该文档所属仓库**纠正。它是文档准确性问题，不使不存在的命令成为 `paper-analysis` 的必做项。
+- `professor-contact` 主技能文档中宣称存在独立命令的内容已在[调用方自己的 PR #79](https://github.com/ScholarWorkflow/professor-contact/pull/79) 提交文档更正（未合并）。该更正不改变业务代码，也不使不存在的命令成为 `paper-analysis` 的必做项。
 - 未发现本次需要 `paper-analysis` 新建或修改的产品文件；不得由本地代理为了填满 PR 自行添加新能力。
 
 ## 四、执行与交接

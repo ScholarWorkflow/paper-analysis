@@ -199,6 +199,41 @@ class FutureWorkTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exceeds"):
             future_work.validate_items([item], [{"quote": huge, "page": 3}])
 
+    def test_16_japanese_sentences_without_spaces(self):
+        for stop in ("。", "."):
+            with self.subTest(stop=stop):
+                sentences = [
+                    f"本手法を提案した{stop}",
+                    f"実験で改善を確認した{stop}",
+                    f"今後は分類器を組み合わせる{stop}",
+                ]
+                candidates = future_work.page_candidates("".join(sentences), 4)
+                self.assertEqual([item["quote"] for item in candidates], sentences)
+                item = {"quote": sentences[-1], "translation_zh": "今后将组合分类器。",
+                        "source": "おわりに", "page": 4}
+                self.assertEqual(future_work.validate_items([item], candidates)[0]["page"], 4)
+                with self.assertRaisesRegex(ValueError, "prepared candidate"):
+                    future_work.validate_items([dict(item, quote=sentences[-1][:-1])], candidates)
+
+    def test_17_ie_explanation_stays_in_exact_sentence(self):
+        sentence = "In future, we will in- vestigate multiple inputs, i.e. the stock index and FAI."
+        following = "We will share the results."
+        candidates = future_work.page_candidates(sentence + " " + following, 4)
+        self.assertEqual([item["quote"] for item in candidates], [sentence, following])
+        item = {"quote": sentence, "translation_zh": "今后将研究多种输入。",
+                "source": "Conclusion", "page": 4}
+        self.assertEqual(future_work.validate_items([item], candidates)[0]["quote"], sentence)
+        with self.assertRaisesRegex(ValueError, "prepared candidate"):
+            future_work.validate_items([dict(item, quote=sentence.split(" the stock")[0])], candidates)
+
+    def test_18_ocr_refresh_uses_same_sentence_boundaries(self):
+        prepared = dict(self.prepared, ocr_required_pages=[3])
+        sentences = ["手法を提案した.", "今後は分類器を組み合わせる。",
+                     "We will study inputs, i.e. the index and FAI."]
+        refreshed = future_work.refresh_candidates(prepared, {3: "".join(sentences)})
+        self.assertEqual([item["quote"] for item in refreshed["candidates"] if item["page"] == 3], sentences)
+        self.assertEqual(refreshed["ocr_required_pages"], [])
+
 
 def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))

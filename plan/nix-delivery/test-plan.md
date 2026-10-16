@@ -1,8 +1,8 @@
 # paper-analysis：Nix 最小测试计划与执行步骤
 
-Test plan revision: t1.2；对应 [执行计划 v1.2](implementation-plan.md)。
+Test plan revision: t1.3；对应 [执行计划 v1.3](implementation-plan.md)。
 状态：候选待审，第一关必测清单与第二关步骤待确认；第三关未执行。本 PR 只交文档。
-本地测试工程师已于 2026-10-16 完成本计划的可执行步骤准备与有限预检，见第 7 节；必测清单、预期结果与各关口状态不变。
+本地测试工程师于 2026-10-16 对 t1.2 完成的步骤准备与有限预检见第 7 节；t1.3 仅修订 T1 的源语义一致性与 README 检查，历史准备记录不代表修订后关口已通过。
 
 ## 1. 必测清单与上限
 
@@ -10,7 +10,7 @@ Test plan revision: t1.2；对应 [执行计划 v1.2](implementation-plan.md)。
 
 | 项 | 业务目标 | 输入或场景 | 预期结果与检查方式 |
 |---|---|---|---|
-| T1 | 固定输出可构建，真实安装完整资源与原生角色 | 一个隔离 consumer；paper-analysis-project | build/apply 成功；完整技能、四 scripts、六 bin 入口、原生 paper-analysis 角色与 vision-tools 直接依赖就位。读实际文件/配置与包声明，不把 store view/eval 当安装。 |
+| T1 | 固定输出可构建，真实安装完整资源与原生角色 | 一个隔离 consumer；paper-analysis-project | build/apply 成功；完整技能、四 scripts、六 bin 入口、原生 paper-analysis 角色与 vision-tools 直接依赖就位。读实际文件/配置与包声明，安装 SKILL.md/角色除等价入口绑定及机械字段映射外与源语义一致；直接阅读 README 核对支持平台、harness、安装方式、固定版本及已知限制（含 OCR 外部前提）。不把 store view/eval 当安装。 |
 | T2 | 四个固定 helper 与本地 pdfx 入口能完成必要最小动作 | 既有 normalized_abstract.json、future_work.pdf、analysis.md、future_work_items.json、facts valid_draft | canonical JSON、PDF 提取/渲染、quality、future-work prepare/validate/finalize 与 facts validate 成功。用原退出码/JSON/目标文件和既有 fixture 预期判断。 |
 | T3 | 新增 OCR wrapper 接到已交真实 vision 依赖 | 安装的 bin/vision-glance 与固定 base-skills app | 固定路径/参数原样转发/closure 正确，不依赖 PATH 或运行时安装；以生成 launcher 和依赖定义只读核对，复用上游现有结果，不重复实际 OCR。 |
 
@@ -61,7 +61,15 @@ jq -e '(.skills | keys) == ["paper-analysis","vision-tools"]' "$RUN/project-env/
 jq -e '(.agents | keys) == ["paper-analysis"]' "$RUN/project-env/manifest.json"
 ```
 
-只读对照本包 `files` 声明与安装树，确认附属资源完整、没有安装 pdfxAgent/其他 base-skills 根包；上面两条 `manifest.json` 断言是这句话的可执行形式，安装结果仍以实际文件核对。检查生成的原生角色来自原 body、准确 name/description，入口指向安装 skill 的 bin，保留 full/gap-only/needs_input/禁止自委派业务约束，没有把 OpenCode 字段冒充 Codex ACL，也没有保留强制 ALL_TOOLS discovery 的旧前置。只核本次转换，不启动模型或重验旧业务拓扑。共享安装保护直接复用，不扩安装矩阵或来源认证。
+只读对照本包 `files` 声明与安装树，确认附属资源完整、没有安装 pdfxAgent/其他 base-skills 根包；上面两条 `manifest.json` 断言是这句话的可执行形式，安装结果仍以实际文件核对。
+
+在同一 T1 检查入口直接阅读以下内容，不另建判定器或模型用例：
+
+- 对照 `$SOURCE/.apm/skills/paper-analysis/SKILL.md` 与安装后的 `$SKILL/SKILL.md`；对照 `$SOURCE/.apm/agents/paper-analysis.agent.md` 与上述 yq 解析的原生角色。name/description 与源一致；除 frontmatter/TOML 机械字段映射和执行计划 §3.2 的等价入口绑定外，保留源正文语义，包括既有 Codex/OpenCode 分支、委派、工具发现、等待/消费结果、full/gap-only/needs_input 与禁止自委派约束；不能只在生成物删改 `ALL_TOOLS` 或加入另一套编排规则。源中现存的编排冲突按执行计划 §3.2 记录限制，不以它要求本轮修业务源或新增 full 运行。
+- 明确检查安装后的 SKILL.md 和角色中实际 helper、PDF quality、OCR 命令与相关变量：它们使用安装 skill 的对应 `bin/*`，不再要求 uv/uvx、全局 glance 或开发 checkout；源命令的参数、调用顺序、输入输出和失败处理不变。仅有关旧工作流的保留说明不作为漏转换；不能靠改写编排正文使检查通过。OpenCode frontmatter 不冒充 Codex ACL。
+- 直接阅读 `$SOURCE/README.md` 一次，核对支持平台 `aarch64-darwin`、harness `Codex`、共享 `agent-env apply --project` 安装方式、固定版本、已知限制五项，并与实际输出/lock 相符；限制包含真实 OCR 的端点、模型、凭据和授权预算外部前提，以及未在 Nix 修复的源层编排问题。不得将本轮安装与 wrapper 结果写成 live OCR 或 full 编排已验证。
+
+只核本次安装适配与源的一致性，不启动模型或重验旧业务拓扑。共享安装保护直接复用，不扩安装矩阵或来源认证。
 
 ## 4. T2：既有数据与四 helper 最小动作
 
@@ -144,7 +152,7 @@ grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 
 ## 7. 本地测试工程师准备与有限预检（2026-10-16）
 
-本节只记录准备情况，不改变第 1 节的必测清单、预期结果与检查方式，也不表示第一、第二关已确认或第三关已执行。准备期间没有运行任何必测命令、产品入口或安装。
+本节保留 t1.2 的历史准备情况，不覆盖 t1.3 第 1、3 节修订，也不表示第一、第二关已确认或第三关已执行。准备期间没有运行任何必测命令、产品入口或安装。
 
 ### 7.1 已准备的资产
 
@@ -188,3 +196,10 @@ grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 - 本轮未运行正式用例，未构建或安装产品，没有通过结论；预检原始输出留在仓库外 `/tmp/pr20-test-prep-20261016`（临时目录，不入库）。
 - 准备符合性审核：`implementation_reviewer` 首轮只读复核第 7.1–7.3 节对应产物和已有预检，指出一处准备资产缺陷 P1——第 5 节的 app 参考值取错输入解析上下文（取 base-skills 自身 lock，而非执行计划 §3.1 的 follows），会使 T3 出现假失败；已按构建实际使用的解析上下文补上 `--override-input`，并复验两个上下文取值确实不同。定向复核判定 P1 已解决、本角色产物完整，另记说明性观察 O4（`--override-input nixpkgs` 与 base-skills 自身 pin 同值，保留用于显式对齐），已按该措辞修正，不影响执行。审核结论见 PR 评论；该审核不运行测试，也不代替测试关口。
 - 下一步：第一、第二关审核确认本计划与步骤 → 产品负责人实施并给出实际 `PRODUCER_SHA` → 本地测试工程师补实际 SHA/路径后按第 3–5 节执行 → 结果交第三关 reviewer。
+
+
+## 8. t1.3 修订影响与待办
+
+按执行计划 v1.3，同步删除 T1 对 Nix 专属编排改写的要求，改为安装 SKILL.md/角色与唯一源的语义一致性检查；等价固定入口仍核对。按[当前测试审核](https://github.com/ScholarWorkflow/paper-analysis/pull/20#issuecomment-6220198787)在 T1 同一只读入口补 README 五项与 OCR 外部前提，不增加用例、模型、真实 OCR、全流程或测试设施。
+
+第一、第二关仅对受影响的 T1 清单与步骤待复核；该审核中对 T2/T3 的有效设计/步骤核对及第 7 节未受影响准备结果直接复用，不因文档 SHA 更新重跑。第三关仍未执行，尚缺真实产品 SHA。本次只修订计划，未新增预检、构建、安装或测试结果。

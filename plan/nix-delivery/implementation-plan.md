@@ -1,7 +1,7 @@
 # paper-analysis：Nix 交付执行计划
 
 Requirement revision: 2026-10-16 Nix 后续批次；直接提交计划 PR，不新建 issue。
-Plan revision: v1.2。Proposed review status: pending。
+Plan revision: v1.3。Proposed review status: pending。
 目标基线：`ScholarWorkflow/paper-analysis@19eb3e26e8eb7ec60cba1d74efe0f27534c10203`（`master`）。本 PR 仅新增本计划与同目录测试计划；没有实施、安装或正式测试结果。
 
 ## 1. 目标、范围与依据
@@ -54,9 +54,11 @@ flake 固定第 2 节全部 revision；base-skills 的 nixpkgs 与 agent-env-nix
 
 前四个 launcher 用固定 Nix Bash/coreutils 解析自身所在的安装 skill 根，再用固定 `pdfx.python/bin/python` 执行该根下对应原脚本；不使用 caller cwd、源码 `.apm` 路径或宿主 Python。参数以独立参数与 `"$@"` 传递，保留原 CLI、exit code、stdout/stderr，不改写 JSON/schema。后两个 launcher 直接 exec 固定 app。只写生成副本；PEP 723 原文不变。
 
-对原 `SKILL.md` 与 agent body 做有边界的构建时转换：原 helper 变量改为安装 skill 的 `bin/*`，所有 helper `uv run`、质量命令 `uvx ... pdfx`、OCR `glance` 改用上述对应入口；说明只适用于 Nix。skill 中 caller-facing 启动说明转换为 Codex native delegation 到准确 `paper-analysis` 并等待消费结果；原生角色保留 coordinator、full/gap-only、needs_input 与禁止自委派语义，不再把 OpenCode Task 当作 Codex 接口。Nix 生成角色正文前部加入当前 Codex 路由约定；替换原 body 中“必须先从 ALL_TOOLS 发现并绑定 spawn/wait callable”的旧段，直接使用运行时正式提供的 native spawn 与 wait/consume，不固定私有 namespace、签名或事件 schema，不把 tool/catalog/programmatic discovery 当委派前置。只有真实 native 调用返回的失败才能报 delegation blocker。此处仅修正 Nix 角色转换与当前公开调用约定，不改 full 的三路业务职责或增加模型测试。不要把安装适配文本扩散回 APM/OpenCode 原件。
+对原 `SKILL.md` 与 agent body 只做等价的安装入口绑定：原 helper 变量指向安装 skill 的 `bin/*`，helper 的 `uv run`、质量命令 `uvx ... pdfx`、OCR `glance` 调用映射到上述对应入口。仅替换解释器/程序及资源路径和直接描述这些路径的文字，参数、调用顺序、输入输出、业务判断与失败处理保持不变；安装副本标明 Nix 入口，APM/uv/PEP 723 原件不变。不得以命令替换为由重写整段业务说明。
 
-角色的 name、description 与完整 body 从同一 `.apm/agents/paper-analysis.agent.md` 读取并转换；用 YAML/frontmatter 与 TOML 正规生成处理转义，不维护第二份业务正文。共享接口仅接受 description/developer_instructions：OpenCode 专属 mode/hidden/temperature/permission 不伪造为 Codex ACL。转换找不到预期边界、必需入口残留或源格式不可解析时构建明确失败，不能静默漏转换。
+角色的 name、description 与完整 body 从同一 `.apm/agents/paper-analysis.agent.md` 读取；仅用 YAML/frontmatter 到共享接口的机械字段映射与 TOML 正规生成处理转义，body 除上述入口绑定外保持源语义，不维护第二份业务正文。共享接口仅接受 description/developer_instructions：OpenCode 专属 mode/hidden/temperature/permission 不伪造为 Codex ACL。Nix 不插入或改写 caller-facing 委派、工具发现、spawn/wait、结果消费、needs_input、禁止自委派或失败判定规则；已有 Codex/OpenCode 分支的选择条件与内容保留。转换找不到预期的入口边界、Nix 运行指令仍要求旧入口或源格式不可解析时构建明确失败，不能静默漏转换；此检查不把源编排正文当作安装层修复对象。
+
+已知源层问题：基线角色的「交互与运行时兼容约定」及 Step 3 含 `ALL_TOOLS` 工具发现前置，与现行 Project Consensus 的 Codex 委派约定冲突。它属于唯一 skill/agent 源的编排约定，由源层负责人另行处理并保留 OpenCode 分支；本次计划修订不修改产品源、不在 Nix 副本中修复或宣称已解决。该已知限制不阻塞依赖、wrapper、机械格式映射及本计划的安装最小动作，也不新增模型、全链迁移或全流程复测门槛；本轮不据安装结果宣称 full 编排已符合现行约定。
 
 ### 3.3 配置、状态、错误与安装
 
@@ -68,15 +70,22 @@ PDF/helper 业务错误仍由原脚本负责。OCR 配置与配额仍由 vision-
 
 - intended_change / approved_behavior_change：仅增加上述 Nix/Codex 交付与固定入口适配。
 - preserved_behavior：四种输入、canonical stripping、PDF/OCR cache fingerprint、future-work 验证、facts schema、full 三件套与 gap-only 边界，以及 APM/uv/PEP 723/OpenCode 原件。
-- prohibited_side_effect：运行时安装依赖、消费者补造产品资源、Zotero 状态访问、browser 流程、恢复撤销命令、改 full 分析/证据语义、秘密入 store。
+- prohibited_side_effect：运行时安装依赖、消费者补造产品资源、Zotero 状态访问、browser 流程、恢复撤销命令、改 full 分析/证据语义、Nix 专属编排语义分支、秘密入 store。
 - invariant / 代表性反例：从任意 cwd 调用仍定位同一安装 skill；只声明 runtimePackages 的反例由固定 launcher 消除；OCR CLI 不在 PATH 的反例由固定 app 消除；缺依赖或源转换漂移必须失败；原角色不得在 full 内再 spawn 自己；原始 OpenCode ACL 不冒充 Codex 安全边界。共享配置与并发保护直接复用，不为此另造状态机。
 
 现实替代方案是 Nix 仅安装提示词，再依赖 uv/全局 glance；它无法满足新增 Nix 入口独立可运行的目标。把四脚本业务重写成新 Python 包会增加双源与兼容风险，本方案保留脚本与 CLI。
 
-顺序：①固定 inputs/lock 并接入已交 pdfx/vision 接口；②实现同源生成与六 launcher；③导出 agent 包和单 root project；④更新 README 的平台、固定版本、安装、覆盖/移除与 OCR 外部前提；⑤依同目录测试计划执行最小验收，再交结果审核。README 不提前声称其他平台或真实 OCR 就绪。
+顺序：①固定 inputs/lock 并接入已交 pdfx/vision 接口；②实现同源生成与六 launcher；③导出 agent 包和单 root project；④更新 README 的支持平台、harness、安装方式、固定版本、已知限制（含 OCR 外部前提与上述源层编排限制），并说明覆盖/移除；⑤依同目录测试计划执行最小验收，再交结果审核。README 不提前声称其他平台或真实 OCR 就绪。
 
-产品 SHA、实际 launcher store 路径和本包 build/install 结果尚不存在，是实施顺序前提；不能拿本文件提交号当成已实现产品号。实现时将实际 revision 与命令填入简短执行记录，若实际接口事实与上述来源冲突，停止受影响设计并交计划 owner 修订。当前无须等待上游新增接口；本包未实施、未批准、未测试。
+产品 SHA、实际 launcher store 路径和本包 build/install 结果尚不存在，是实施顺序前提；不能拿本文件提交号当成已实现产品号。实现时将实际 revision 与命令填入简短执行记录，若实际接口事实与上述来源冲突，停止受影响设计并交计划 owner 修订。当前无须等待上游新增接口；本包未实施、未测试；v1.3 修订待审，不自行沿用 v1.2 的批准。
 
 ## 5. 交接
 
 本计划与测试计划是本次唯一完整候选。下一负责人：独立 reviewer 审核候选；正式计划批准后产品负责人实施；本地测试工程师核对实际输出后执行已确认 recipe。本作者不填写 P1–P4 PASS 或 Plan conclusion: APPROVED，不将历史上游结果冒充本包通过。
+
+
+## 6. v1.3 修订影响
+
+本轮按用户要求纠正 Nix 与唯一源的职责边界：删除 v1.2 §3.2 中仅在 Nix 生成正文修改委派/发现/等待/失败规则的方案，保留六个等价固定入口与机械格式映射。依据为 Nix 交付规则第 1–2 节的单源与安装层范围；旧 [v1.2 审核](https://github.com/ScholarWorkflow/paper-analysis/pull/20#issuecomment-6218829881) 不授权 Nix 另立编排语义。
+
+受影响决定为正文转换的 owner、允许的转换范围和已知限制，对应 P1–P4 的相关部分由 reviewer 定向复核。固定依赖事实、六入口接口、共享安装保护、原 helper 业务及 OCR 外部前提未变，旧审核这些部分的依据可复用，由 reviewer 记录复用结论，作者不复制 PASS。测试只同步 T1 的源语义一致性及 README 检查，T2/T3 的既有步骤与有效准备核对不变。

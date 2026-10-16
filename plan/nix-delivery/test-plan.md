@@ -130,7 +130,7 @@ grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 
 上面两条 `grep` 是前一句“exec 的绝对程序来自固定 program、原样转发参数”的可执行形式；launcher 全文、依赖定义与角色 OCR 命令仍按本节的只读方式人工核对。未命中即该条不成立，`grep` 的非零退出码不得被后续命令覆盖。
 
-`nix eval` 的两个 `--override-input` 复现执行计划 §3.1 的 follows 解析，不能省略：base-skills `3ab2ac1` 自身 lock 仍指向 agent-env-nix `760c1bf`，两版 `mkAgentPackage` 生成不同 store 路径（本地只读求值为 `…-w7h0lrf2mxkjxpinnskphrqb87rf7hzv-vision-glance` 与 follows 后的 `…-10hhzfjzfyl4z3f4z8xnq240qs3bjsr1-vision-glance`）。用 base-skills 自身 lock 求得的路径与安装 launcher 中的引用不同，会造成假失败；求值上下文与安装实际不符时按前提偏差报告，不改断言求通过。
+`nix eval` 的 `--override-input agent-env-nix` 复现执行计划 §3.1 的 follows 解析，不能省略：base-skills `3ab2ac1` 自身 lock 仍指向 agent-env-nix `760c1bf`，两版 `mkAgentPackage` 生成不同 store 路径（本地只读求值为 `…-w7h0lrf2mxkjxpinnskphrqb87rf7hzv-vision-glance` 与 follows 后的 `…-10hhzfjzfyl4z3f4z8xnq240qs3bjsr1-vision-glance`）。`--override-input nixpkgs` 与 base-skills 自身 pin 同值，保留它用于显式对齐 §3.1 的 nixpkgs follows。用 base-skills 自身 lock 求得的路径与安装 launcher 中的引用不同，会造成假失败；求值上下文与安装实际不符时按前提偏差报告，不改断言求通过。
 
 上游 [PR #8](https://github.com/ScholarWorkflow/base-skills/pull/8) 与其 [计划/结果记录](https://github.com/ScholarWorkflow/base-skills/blob/3ab2ac188e625b8a8ae37b5fa318c579787c3d1e/plan/issue-7-nix-packages.md) 已覆盖 vision 包资源和固定 runtime 的相关安装/本地动作；本轮复用未受影响部分，不重复 OCR、视觉功能或 browser 测试。该历史记录不是 live OCR 模型通过的证据，T3 也不作此声明。
 
@@ -186,5 +186,5 @@ grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 
 - 缺少 `PRODUCER_SHA`：产品尚未实现，执行计划第 3.1–3.2 节的 flake、六入口与角色转换都还不存在，文档 PR 的提交号不能代填，因此 T1–T3 全部记为未执行。
 - 本轮未运行正式用例，未构建或安装产品，没有通过结论；预检原始输出留在仓库外 `/tmp/pr20-test-prep-20261016`（临时目录，不入库）。
-- 准备符合性审核：`implementation_reviewer` 首轮只读复核第 7.1–7.3 节对应产物和已有预检，指出一处准备资产缺陷 P1——第 5 节的 app 参考值取错输入解析上下文（取 base-skills 自身 lock，而非执行计划 §3.1 的 follows），会使 T3 出现假失败；已按构建实际使用的解析上下文补上 `--override-input`，并复验两个上下文取值确实不同。定向复核结论见 PR 评论；该审核不运行测试，也不代替测试关口。
+- 准备符合性审核：`implementation_reviewer` 首轮只读复核第 7.1–7.3 节对应产物和已有预检，指出一处准备资产缺陷 P1——第 5 节的 app 参考值取错输入解析上下文（取 base-skills 自身 lock，而非执行计划 §3.1 的 follows），会使 T3 出现假失败；已按构建实际使用的解析上下文补上 `--override-input`，并复验两个上下文取值确实不同。定向复核判定 P1 已解决、本角色产物完整，另记说明性观察 O4（`--override-input nixpkgs` 与 base-skills 自身 pin 同值，保留用于显式对齐），已按该措辞修正，不影响执行。审核结论见 PR 评论；该审核不运行测试，也不代替测试关口。
 - 下一步：第一、第二关审核确认本计划与步骤 → 产品负责人实施并给出实际 `PRODUCER_SHA` → 本地测试工程师补实际 SHA/路径后按第 3–5 节执行 → 结果交第三关 reviewer。

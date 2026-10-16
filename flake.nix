@@ -47,7 +47,6 @@
       packages.${system} = {
         paper-analysis = products.package;
         paper-analysis-project = products.project;
-        default = products.project;
       };
     };
 }

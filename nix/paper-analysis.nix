@@ -44,12 +44,17 @@ let
     then fail "${label}: expected exactly one '${key}:' frontmatter line"
     else
       let raw = lib.removePrefix prefix (builtins.head matches);
-      in if lib.hasPrefix "'" raw && lib.hasSuffix "'" raw
+      in if lib.hasPrefix "'" raw
       then
-        let value = builtins.substring 1 (builtins.stringLength raw - 2) raw;
-        in if lib.hasInfix "''" value
-        then fail "${label}: '${key}' uses YAML quote escaping this bounded conversion does not support"
-        else value
+        if !(lib.hasSuffix "'" raw) || builtins.stringLength raw < 2
+        then fail "${label}: '${key}' has an unterminated YAML single-quoted scalar"
+        else
+          let value = builtins.substring 1 (builtins.stringLength raw - 2) raw;
+          in if lib.hasInfix "''" value
+          then fail "${label}: '${key}' uses YAML quote escaping this bounded conversion does not support"
+          else value
+      else if lib.hasPrefix "\"" raw
+      then fail "${label}: '${key}' uses a double-quoted YAML scalar this bounded conversion does not support"
       else raw;
 
   joinFrontmatter = parsed: body: "${parsed.frontmatter}\n---\n${body}";
@@ -298,7 +303,7 @@ let
     set -euo pipefail
     self=$(${coreutils}/bin/readlink -f -- "$0")
     skill_root=$(${coreutils}/bin/dirname -- "$(${coreutils}/bin/dirname -- "$self")")
-    exec ${pdfx.python}/bin/python3 "$skill_root/scripts/${script}" "$@"
+    exec ${pdfx.python}/bin/python "$skill_root/scripts/${script}" "$@"
   '';
 
   appLauncher = name: program: mkLauncher name ''

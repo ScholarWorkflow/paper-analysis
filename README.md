@@ -100,6 +100,7 @@ CODEX_HOME="$PWD/codex-home" "$PWD/project-env/bin/agent-env" apply --project /a
 ### 已知限制
 
 - 只支持 `aarch64-darwin` + Codex；没有 Linux、其他 macOS 架构或 OpenCode 的 Nix 安装。
+- 源层编排问题：基线角色的「交互与运行时兼容约定」与 Step 3 仍含 `ALL_TOOLS` 工具发现前置，与现行 Project Consensus 的 Codex 委派约定冲突。它属于唯一 skill/agent 源，由源负责人另行处理并保留 OpenCode 分支；Nix 层只做等价入口绑定，不修改也不宣称已解决。因此本轮安装结果不代表 full 编排已符合现行约定。
 - 不恢复已撤销的 linker、CLI backfill、map、dedup，也不迁移 Zotero/browser 业务链。
 - APM、uv、PEP 723 与 OpenCode 原件保持原样，供原有路径继续使用。
 

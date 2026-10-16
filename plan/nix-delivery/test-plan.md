@@ -119,13 +119,18 @@ jq -e '.ok == true and .facts.paper.title == "Paper title"' "$RUN/output/facts.j
 读取安装的 `bin/vision-glance`，核对它 exec 的绝对程序来自固定 `base-skills@3ab2ac188e625b8a8ae37b5fa318c579787c3d1e` 的 `apps.aarch64-darwin.vision-glance.program`，转发 `"$@"`，没有 ambient `python`/`glance`、uv/pip 或 checkout 路径。读取同次构建定义/共享 metadata，确认直接 agentDependencies 为 vision-tools 且 launcher 的 Nix 引用保留 OCR app closure。角色 OCR 命令应指向安装 skill 的同一 wrapper。
 
 ```bash
+# 与本次构建同一解析上下文：执行计划 §3.1 要求 base-skills 的 nixpkgs 与 agent-env-nix follows 本仓统一输入
 APP=$(nix eval --raw \
+  --override-input agent-env-nix github:RekiDunois/agent-env-nix/2158e933aab6c845ae1ceb1228458d624f8777d5 \
+  --override-input nixpkgs github:NixOS/nixpkgs/6510408d147d8c5e6d76043e899e9251756f6a75 \
   github:ScholarWorkflow/base-skills/3ab2ac188e625b8a8ae37b5fa318c579787c3d1e#apps.aarch64-darwin.vision-glance.program)
 grep -F -- "$APP" "$SKILL/bin/vision-glance"
 grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 ```
 
 上面两条 `grep` 是前一句“exec 的绝对程序来自固定 program、原样转发参数”的可执行形式；launcher 全文、依赖定义与角色 OCR 命令仍按本节的只读方式人工核对。未命中即该条不成立，`grep` 的非零退出码不得被后续命令覆盖。
+
+`nix eval` 的两个 `--override-input` 复现执行计划 §3.1 的 follows 解析，不能省略：base-skills `3ab2ac1` 自身 lock 仍指向 agent-env-nix `760c1bf`，两版 `mkAgentPackage` 生成不同 store 路径（本地只读求值为 `…-w7h0lrf2mxkjxpinnskphrqb87rf7hzv-vision-glance` 与 follows 后的 `…-10hhzfjzfyl4z3f4z8xnq240qs3bjsr1-vision-glance`）。用 base-skills 自身 lock 求得的路径与安装 launcher 中的引用不同，会造成假失败；求值上下文与安装实际不符时按前提偏差报告，不改断言求通过。
 
 上游 [PR #8](https://github.com/ScholarWorkflow/base-skills/pull/8) 与其 [计划/结果记录](https://github.com/ScholarWorkflow/base-skills/blob/3ab2ac188e625b8a8ae37b5fa318c579787c3d1e/plan/issue-7-nix-packages.md) 已覆盖 vision 包资源和固定 runtime 的相关安装/本地动作；本轮复用未受影响部分，不重复 OCR、视觉功能或 browser 测试。该历史记录不是 live OCR 模型通过的证据，T3 也不作此声明。
 
@@ -143,7 +148,7 @@ grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 
 ### 7.1 已准备的资产
 
-- 执行步骤：第 2–5 节的变量来源、命令、输出位置和失败处理已补齐，可按顺序在同一 shell 会话执行。相对 t1.2 原文只有三处补充，都不改变任何必测目标或断言：第 3 节先校验并建立 `TEST_RUN_ROOT`（`mktemp -d` 要求父目录已存在）；把第 3 节“安装树只读对照”和第 5 节“exec 固定 program、原样转发参数”这两句已有要求写成可直接运行、可检查退出码的命令。
+- 执行步骤：第 2–5 节的变量来源、命令、输出位置和失败处理已补齐，可按顺序在同一 shell 会话执行。相对 t1.2 原文只有三处针对检查命令的补充（另有若干说明性文字），都不改变任何必测目标或断言：第 3 节先校验并建立 `TEST_RUN_ROOT`（`mktemp -d` 要求父目录已存在）；把第 3 节“安装树只读对照”和第 5 节“exec 固定 program、原样转发参数”这两句已有要求写成可直接运行、可检查退出码的命令。
 - 测试代码：无需新增。T1–T3 的判断入口是安装后 `bin/*` 的退出码与 JSON、`jq`/`yq` 断言、既有 `tests/fixtures` 数据和共享安装器公开的 `apply`/`manifest.json`；不新增采集器、判定器或证据账本。
 - 夹具与数据：复用受测 SHA 的 `tests/fixtures/normalized_abstract.json`、`future_work.pdf`、`future_work_items.json`、`analysis.md` 与 `tests/test_facts.py` 的 `FactsTests.valid_draft()`，不新增或改写夹具。
 - 配置：本轮不需要 Codex/eval 服务、模型认证、Zotero/Chrome fixture 或视觉 API 配置，因此不新增配置文件；只用 `PRODUCER_SHA` 与 `TEST_RUN_ROOT` 两个变量，都在第 3 节显式校验。
@@ -159,7 +164,7 @@ grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 | Nix | 2.34.8，`experimental-features` 含 `flakes`、`nix-command` |
 | jq 与 yq | jq 1.8.2；yq v4.54.1，`-p toml -o json` 用合成 TOML 实测通过 |
 | git 与 mktemp | git 2.55.0；macOS 自带 `/usr/bin/mktemp` |
-| 固定 inputs | 第 2 节各 revision 均可解析：nixpkgs `6510408d`、base-skills `3ab2ac1`、pdf-processing-core `3444dca`、agent-env-nix `2158e93`、agent-skills-nix `2948865`、mcp-servers-nix `3184897` |
+| 固定 inputs | 执行计划第 2 节各 revision 均可解析：nixpkgs `6510408d`、base-skills `3ab2ac1`、pdf-processing-core `3444dca`、agent-env-nix `2158e93`、agent-skills-nix `2948865`、mcp-servers-nix `3184897` |
 | 私有输入凭据 | nix 已配置 GitHub `access-tokens`（非空，未记录取值）；base-skills 与 agent-env-nix 为私有仓库，构建必须保留原 HOME 与 Nix 配置 |
 | fetcher 缓存 | `~/.cache/nix` 可写，未出现只读缓存库 |
 | 夹具 | `future_work.pdf` 为 1 页（`pdfinfo` 查看，仅本次预检使用），与第 4 节 `.pages == 1` 一致；其余三个夹具存在；`FactsTests.valid_draft()` 可由 `runpy` 加载（该文件有 `__main__` 保护，不会触发 unittest 主程序） |
@@ -167,12 +172,13 @@ grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 
 ### 7.3 对照固定版本的只读接口核对
 
-按第 2 节的固定 revision 读取上游定义，确认第 3–5 节的路径与断言与实际接口一致：
+按执行计划第 2 节的固定 revision 读取上游定义，确认第 3–5 节的路径与断言与实际接口一致：
 
 - `agent-env-nix@2158e93` 的 `runtime/activate.sh` 接受 `apply|remove --project PATH`；技能与角色分别写入 `<project>/.agents/skills/<name>` 和 `<project>/.codex/agents/<name>.toml`，状态与 GC root 都放在 `<project>/.agent-env-nix`；配置助手读取 `$CODEX_HOME/config.toml`、项目及父目录的 `.codex/config.toml` 与 `/etc/codex/config.toml`，因此设独立 `CODEX_HOME` 后不读用户 `~/.codex` 配置。
 - `agent-env-nix@2158e93` 的 `lib/package.nix`：`exports.agents` 只接受 `description` 与 `developer_instructions`，生成的 TOML 顶层键为 `name`、`description`、`developer_instructions`；`lib/project.nix` 会安装 `roots` 与 `agentDependencies` 中 `enableHarnesses` 含 `codex` 的包，并在 `manifest.json` 列出导出名，所以直接依赖 vision-tools 会出现、未列入依赖的 pdfxAgent 不会出现。
 - `pdf-processing-core@3444dca` 的 `nix/pdfx.nix` 返回 `{ pdfx, pdfxAgent, python }`，`python` 已带 PyMuPDF、Pillow 与 `scholar-workflow-pdfx`；`lib/pdfx/cli.py` 的 `quality <pdf> --json` 输出顶层键 `pdf`、`thresholds`、`summary`、`pages`，与第 4 节断言一致。
 - `base-skills@3ab2ac1` 的 `apps.aarch64-darwin.vision-glance.program` 存在，指向固定 Python 与技能 payload 的启动脚本；该技能 payload 含 `bin/glance` 与 `vision_client.py`，与第 3 节安装树断言一致。
+- 求值上下文：base-skills `3ab2ac1` 自身 lock 指向 agent-env-nix `760c1bf`，与执行计划 §2 的统一 pin `2158e93` 不是同一版，两版 `mkAgentPackage` 生成不同 store 路径。本地只读求值得到两个不同的 vision-glance app（`…-w7h0lrf2mxkjxpinnskphrqb87rf7hzv-vision-glance` 与 follows 后的 `…-10hhzfjzfyl4z3f4z8xnq240qs3bjsr1-vision-glance`），所以第 5 节的参考值必须按执行计划 §3.1 的 follows 解析求值，命令中已写 `--override-input`。
 
 以上为准备阶段的接口核对，不能代替第 3–5 节对实际安装结果的检查。
 
@@ -180,5 +186,5 @@ grep -F -- '"$@"' "$SKILL/bin/vision-glance"
 
 - 缺少 `PRODUCER_SHA`：产品尚未实现，执行计划第 3.1–3.2 节的 flake、六入口与角色转换都还不存在，文档 PR 的提交号不能代填，因此 T1–T3 全部记为未执行。
 - 本轮未运行正式用例，未构建或安装产品，没有通过结论；预检原始输出留在仓库外 `/tmp/pr20-test-prep-20261016`（临时目录，不入库）。
-- 准备符合性审核：由 `implementation_reviewer` 只读复核第 7.1–7.3 节对应产物和已有预检，结论见 PR 评论；该审核不运行测试，也不代替测试关口。
+- 准备符合性审核：`implementation_reviewer` 首轮只读复核第 7.1–7.3 节对应产物和已有预检，指出一处准备资产缺陷 P1——第 5 节的 app 参考值取错输入解析上下文（取 base-skills 自身 lock，而非执行计划 §3.1 的 follows），会使 T3 出现假失败；已按构建实际使用的解析上下文补上 `--override-input`，并复验两个上下文取值确实不同。定向复核结论见 PR 评论；该审核不运行测试，也不代替测试关口。
 - 下一步：第一、第二关审核确认本计划与步骤 → 产品负责人实施并给出实际 `PRODUCER_SHA` → 本地测试工程师补实际 SHA/路径后按第 3–5 节执行 → 结果交第三关 reviewer。

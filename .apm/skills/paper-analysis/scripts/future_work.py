@@ -99,7 +99,12 @@ def page_candidates(text: str, page: int) -> list[dict[str, Any]]:
         # Keep sentences, rather than whole pages or table-heavy paragraphs,
         # as the only valid quote units. Split before capitalized prose too
         # because PDF extraction often drops the original separating space.
-        for sentence in re.split(r"(?<=[.!?。！？])(?=\s|[A-Z])", quote):
+        # Japanese prose can follow either 。 or an ASCII full stop directly;
+        # the sentence-internal abbreviation i.e. must keep its explanation.
+        for sentence in re.split(
+            r"(?<=。)|(?<!\bi\.e\.)(?<=[.!?！？])(?=\s|[A-Z\u3040-\u30ff\u3400-\u9fff])",
+            quote,
+        ):
             sentence = normalized_quote(sentence)
             if sentence and len(sentence) <= MAX_QUOTE_CHARS:
                 candidates.append({"id": quote_id(sentence), "quote": sentence, "page": page})

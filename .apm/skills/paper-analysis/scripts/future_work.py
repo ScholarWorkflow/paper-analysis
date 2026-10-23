@@ -181,35 +181,51 @@ def mark_edge_exclusions(
                 for line in block["lines"]:
                     repeated.setdefault((block["edge"], line["text"]), set()).add(source["page"])
     for source, blocks in zip(source_pages, layouts):
-        exclusions = []
-        for edge in ("top", "bottom"):
-            ordered = blocks if edge == "top" else list(reversed(blocks))
-            outer = []
-            for block in ordered:
-                if block["edge"] != edge or not all(
+        # Extraction order can put a visual header after the footer. Only
+        # contiguous text-edge runs are candidates; never remove internal blocks.
+        outer_indices = set()
+        for indices in (range(len(blocks)), reversed(range(len(blocks)))):
+            for index in indices:
+                block = blocks[index]
+                if not block["edge"] or not all(
                     line["text"].strip().isdecimal()
-                    or len(repeated.get((edge, line["text"]), set())) >= 2
+                    or len(repeated.get((block["edge"], line["text"]), set())) >= 2
                     for line in block["lines"]
                 ):
                     break
-                outer.append(block)
-            if not outer or len(outer) == len(blocks):
+                outer_indices.add(index)
+        proven = set()
+        for edge in ("top", "bottom"):
+            indices = {index for index in outer_indices if blocks[index]["edge"] == edge}
+            outer = [blocks[index] for index in indices]
+            body = [block for index, block in enumerate(blocks) if index not in indices]
+            if not outer or not body:
                 continue
-            # Every remaining block must be geometrically inward, with at
-            # least one complete edge line's height of separation.
-            body = ordered[len(outer):]
+            # Keep the existing geometric separation proof, independent of
+            # the position of these blocks in the extraction sequence.
             height = max(line["height"] for block in outer for line in block["lines"])
             gap = (min(block["bbox"][1] for block in body)
                    - max(block["bbox"][3] for block in outer)) if edge == "top" else (
                        min(block["bbox"][1] for block in outer)
                        - max(block["bbox"][3] for block in body))
-            if gap < height:
-                continue
-            start = 0 if edge == "top" else min(block["lines"][0]["start"] for block in outer)
-            end = max(block["lines"][-1]["end"] for block in outer) if edge == "top" else len(source["text"])
+            if gap >= height:
+                proven.update(indices)
+        exclusions = []
+        retained = set()
+        for indices in (range(len(blocks)), reversed(range(len(blocks)))):
+            for index in indices:
+                if index not in proven:
+                    break
+                retained.add(index)
+        for index in sorted(retained):
+            block = blocks[index]
+            # source_layout permits only whitespace between mapped blocks;
+            # include that gap so adjacent exclusions form a continuous run.
+            start = 0 if index == 0 else blocks[index - 1]["lines"][-1]["end"]
+            end = len(source["text"]) if index == len(blocks) - 1 else block["lines"][-1]["end"]
             exclusions.append({"start": start, "end": end, "text": source["text"][start:end],
-                               "edge": edge, "reason": "independent outer edge block"})
-        source["edge_exclusions"] = sorted(exclusions, key=lambda item: item["start"])
+                               "edge": block["edge"], "reason": "independent outer edge block"})
+        source["edge_exclusions"] = exclusions
 
 
 def refresh_candidates(payload: dict[str, Any], pages: dict[int, str]) -> dict[str, Any]:
@@ -408,16 +424,25 @@ def source_bounds(source: dict[str, Any]) -> tuple[int, int]:
     """Trim prepared outer exclusions only when joining adjacent pages."""
     text = source["text"]
     start, end = 0, len(text)
-    for interval in source.get("edge_exclusions", []):
+    intervals = sorted(source.get("edge_exclusions", []), key=lambda item: item["start"])
+    for interval in intervals:
         left, right = interval["start"], interval["end"]
-        if not (0 <= left <= right <= len(text)) or interval.get("text") != text[left:right]:
+        if (not (0 <= left <= right <= len(text))
+                or interval.get("text") != text[left:right]
+                or interval.get("edge") not in {"top", "bottom"}):
             raise ValueError(f"invalid edge exclusion on page {source['page']}")
-        if interval["edge"] == "top" and left == 0:
-            start = right
-        elif interval["edge"] == "bottom" and right == len(text):
-            end = left
+    # Top/bottom describe geometry, not extraction order. Consume contiguous
+    # prefix/suffix intervals only, leaving exactly one untouched body slice.
+    remaining = []
+    for interval in intervals:
+        if interval["start"] == start:
+            start = interval["end"]
         else:
+            remaining.append(interval)
+    for interval in reversed(remaining):
+        if interval["end"] != end or interval["start"] < start:
             raise ValueError(f"non-outer edge exclusion on page {source['page']}")
+        end = interval["start"]
     return start, end
 
 

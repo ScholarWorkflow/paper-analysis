@@ -5,9 +5,11 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
 from pathlib import Path
 
 import pymupdf
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1] / ".apm/skills/paper-analysis"
@@ -237,6 +239,250 @@ class FutureWorkTests(unittest.TestCase):
 
 def read_json(path):
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+NON_CANDIDATE_QUOTE = (
+    "In the future, we are planning to investigate adaptive search across documents."
+)
+SECOND_OCR_QUOTE = "In the future, we are planning to evaluate multilingual retrieval."
+REPEATED_QUOTE = "We are planning to investigate adaptive retrieval."
+REPEATED_CANONICAL = "We are planning to inves- tigate adaptive retrieval."
+TWO_SENTENCES = "We will compare longer documents. We will publish the evaluation protocol."
+
+
+def write_analysis(path, quote, source="Method"):
+    path.write_text(
+        "# Synthetic analysis\n\n## 局限性与批判性评价\n保留原有限制。\n\n"
+        "## 作者明说的未来工作（Future Work）\n"
+        f"- 原文：{quote}\n  译：计划开展后续研究。\n  出处：{source}\n\n"
+        "## 对自身研究的帮助评估\n保留原有评价。\n",
+        encoding="utf-8",
+    )
+
+
+def write_prepared(path, prepared):
+    path.write_text(json.dumps(prepared, ensure_ascii=False), encoding="utf-8")
+
+
+def make_non_candidate_pdf(path, blank_pages=()):
+    with pymupdf.open() as document:
+        for number in range(1, 23):
+            page = document.new_page()
+            if number in blank_pages:
+                continue
+            text = (
+                "Method\n" + NON_CANDIDATE_QUOTE if number == 18 else
+                "Method\n" + SECOND_OCR_QUOTE if number == 19 else
+                "This synthetic study compares retrieval accuracy on document collections.\n"
+                "The evaluation measures precision and recall under controlled conditions."
+            )
+            page.insert_textbox(pymupdf.Rect(72, 72, 520, 700), text, fontsize=11)
+        document.save(path)
+
+
+def finalize_prepared(directory, prepared, quote, page, **options):
+    prepared_path = directory / "prepare.json"
+    items_path = directory / "items.json"
+    analysis = directory / "analysis.md"
+    write_prepared(prepared_path, prepared)
+    write_prepared(items_path, [{
+        "quote": quote, "translation_zh": "计划开展后续研究。", "source": "Method", "page": page,
+    }])
+    patch = options.pop("patch", False)
+    future_work.finalize(analysis, items_path, prepared_path, patch, **options)
+    return read_json(future_work.sidecar_path(analysis))
+
+
+@pytest.fixture
+def span_material(tmp_path):
+    pdf = tmp_path / "spans.pdf"
+    with pymupdf.open() as document:
+        for _ in range(6):
+            document.new_page()
+        # 新建页面后重新取得句柄，避免页面对象失效。
+        first = document[0]
+        first.insert_text((72, 100), "We are planning to inves-\ntigate adaptive retrieval.")
+        first.insert_text((72, 220), REPEATED_QUOTE)
+        first.insert_text((72, 730), "The next evaluation includes")
+        for number in (2, 3):
+            page = document[number - 1]
+            page.insert_text((72, 26), "Synthetic study running header")
+        document[1].insert_text((72, 730), "In the future, we are planning to inves-")
+        document[2].insert_text((72, 72), "tigate adaptive search across documents.")
+        for number in (2, 3):
+            document[number - 1].insert_text((290, 820), str(number))
+        document[3].insert_text((72, 72), "a separate experiment.")
+        document[3].insert_text((72, 180), TWO_SENTENCES)
+        document[3].insert_text((72, 300), REPEATED_QUOTE)
+        for number in (5, 6):
+            # 页边正文位于同一个文本块，中间句不能因位置或重复而删除。
+            document[number - 1].insert_text((72, 34),
+                "We are planning to compare retrieval.\n"
+                "These controls remain mandatory.\n"
+                "We are planning to report every result.")
+        document[4].insert_text((72, 180),
+            "In the future, we are planning a cost- sensitive evaluation.")
+        document[4].insert_text((72, 776),
+            "The next investigation compares retrieval.\nThese controls remain mandatory.")
+        document[5].insert_text((72, 100),
+            "The planned evaluation reports every result.")
+        document.save(pdf)
+    return future_work.prepare(pdf, 6)
+
+
+def test_non_candidate_page_has_complete_sources_and_upgrades(tmp_path):
+    pdf = tmp_path / "paper.pdf"
+    make_non_candidate_pdf(pdf)
+    prepared = future_work.prepare(pdf, 3)
+    assert prepared["toc"] == []
+    assert prepared["selection"]["last_pages"] == 3
+    assert 18 not in prepared["selection"]["pages"]
+    assert all(item["page"] != 18 for item in prepared["candidates"])
+    assert [item["page"] for item in prepared["source_pages"]] == list(range(1, 23))
+    assert NON_CANDIDATE_QUOTE in future_work.normalized_quote(prepared["source_pages"][17]["text"])
+    analysis = tmp_path / "analysis.md"
+    write_analysis(analysis, NON_CANDIDATE_QUOTE)
+    prepared_path = tmp_path / "prepare.json"
+    write_prepared(prepared_path, prepared)
+    future_work.upgrade_full_sidecar(analysis, prepared_path)
+    payload = read_json(future_work.sidecar_path(analysis))
+    assert payload["items"][0]["quote"] == NON_CANDIDATE_QUOTE
+    assert payload["items"][0]["page"] == 18
+    assert payload["source_pdf_fingerprint"] == "sha256:" + hashlib.sha256(pdf.read_bytes()).hexdigest()
+
+
+def test_same_page_two_sentences_remain_one_item(tmp_path, span_material):
+    payload = finalize_prepared(tmp_path, span_material, TWO_SENTENCES, 4)
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["quote"] == TWO_SENTENCES
+    assert payload["items"][0]["page"] == 4
+
+
+@pytest.mark.parametrize("source,quote", [
+    ("Future work will evaluate adaptive retrieval.", "Future work will evaluate adaptive retrieval."),
+    ("Future work will inves-\ntigate adaptive retrieval.", "Future work will investigate adaptive retrieval."),
+])
+def test_source_path_preserves_existing_single_candidate_quote_and_id(tmp_path, source, quote):
+    pdf = tmp_path / "single.pdf"
+    with pymupdf.open() as document:
+        document.new_page().insert_text((72, 72), source)
+        document.save(pdf)
+    prepared = future_work.prepare(pdf, 3)
+    assert len(prepared["candidates"]) == 1
+    candidate = prepared["candidates"][0]
+    payload = finalize_prepared(tmp_path, prepared, quote, 1)
+    assert payload["items"][0]["quote"] == candidate["quote"]
+    assert payload["items"][0]["id"] == candidate["id"]
+
+
+def test_adjacent_pages_remove_only_independent_edges_and_real_hyphen(tmp_path, span_material):
+    sources = {item["page"]: item["text"] for item in span_material["source_pages"]}
+    assert "In the future, we are planning to inves-" in sources[2]
+    assert "tigate adaptive search across documents." in sources[3]
+    assert sources[2].index("inves-") < sources[2].index("\n2\n")
+    assert sources[3].index("running header") < sources[3].index("tigate adaptive")
+    payload = finalize_prepared(tmp_path, span_material, NON_CANDIDATE_QUOTE, 2)
+    item = payload["items"][0]
+    assert item["quote"] == NON_CANDIDATE_QUOTE
+    assert item["page"] == 2
+    assert "2–3" in item["source"] or "2-3" in item["source"]
+
+
+def test_repeated_quote_uses_first_page_and_first_offset(tmp_path, span_material):
+    first_text = span_material["source_pages"][0]["text"]
+    assert first_text.index("inves-\n") < first_text.index(REPEATED_QUOTE)
+    analysis = tmp_path / "analysis.md"
+    write_analysis(analysis, REPEATED_QUOTE)
+    prepared_path = tmp_path / "prepare.json"
+    write_prepared(prepared_path, span_material)
+    future_work.upgrade_full_sidecar(analysis, prepared_path)
+    item = read_json(future_work.sidecar_path(analysis))["items"][0]
+    # 最早位置的旧候选保留断词写法，可由既有 quote/ID 核对页内位置。
+    assert item["page"] == 1
+    assert item["quote"] == REPEATED_CANONICAL
+    assert item["id"] == hashlib.sha256(REPEATED_CANONICAL.encode()).hexdigest()
+
+
+@pytest.mark.parametrize("quote,page", [
+    ("An invented research plan is described here.", 4),
+    ("We will study longer documents. We will publish the evaluation protocol.", 4),
+    ("We are planning to compare retrieval. We are planning to report every result.", 5),
+    ("The next investigation compares retrieval. The planned evaluation reports every result.", 5),
+    (NON_CANDIDATE_QUOTE, 3),
+    ("The next evaluation includes a separate experiment.", 1),
+    ("In the future, we are planning a costsensitive evaluation.", 5),
+])
+def test_nonliteral_or_noncontinuous_spans_do_not_write_sidecar(tmp_path, span_material, quote, page):
+    analysis = tmp_path / "analysis.md"
+    write_analysis(analysis, quote)
+    original = analysis.read_bytes()
+    with pytest.raises(ValueError):
+        finalize_prepared(tmp_path, span_material, quote, page, patch=True)
+    assert analysis.read_bytes() == original
+    assert not future_work.sidecar_path(analysis).exists()
+
+
+def test_unmatched_upgrade_keeps_initial_analysis_without_sidecars(tmp_path, span_material):
+    analysis = tmp_path / "analysis.md"
+    write_analysis(analysis, "An invented research plan is described here.")
+    original = analysis.read_bytes()
+    prepared_path = tmp_path / "prepare.json"
+    write_prepared(prepared_path, span_material)
+    with pytest.raises(ValueError):
+        future_work.upgrade_full_sidecar(analysis, prepared_path)
+    assert analysis.read_bytes() == original
+    assert not future_work.sidecar_path(analysis).exists()
+    assert not Path(str(analysis) + ".facts.json").exists()
+
+
+def test_finalize_rejects_foreign_digest_without_patching_analysis(tmp_path, span_material):
+    analysis = tmp_path / "analysis.md"
+    write_analysis(analysis, TWO_SENTENCES)
+    original = analysis.read_bytes()
+    with pytest.raises(ValueError):
+        finalize_prepared(tmp_path, span_material, TWO_SENTENCES, 4, pdf_sha256="0" * 64, patch=True)
+    assert analysis.read_bytes() == original
+    assert not future_work.sidecar_path(analysis).exists()
+
+
+def test_two_extra_ocr_merges_keep_first_resolution_and_good_pages(tmp_path):
+    pdf = tmp_path / "paper.pdf"
+    make_non_candidate_pdf(pdf, blank_pages=(19, 22))
+    prepared = future_work.prepare(pdf, 3)
+    # 明确模拟质量不可信；页内原话实际存在，不能只因匹配成功而保存。
+    prepared = deepcopy(prepared)
+    next(item for item in prepared["page_quality"] if item["page"] == 18)["tier"] = "untrusted"
+    original_sources = deepcopy(prepared["source_pages"])
+    assert prepared["ocr_required_pages"] == [22]
+    with pytest.raises(ValueError):
+        finalize_prepared(tmp_path, prepared, NON_CANDIDATE_QUOTE, 18)
+    prepared_path = tmp_path / "prepare.json"
+    ocr_path = tmp_path / "ocr.json"
+    write_prepared(prepared_path, prepared)
+    write_prepared(ocr_path, {"pages": {
+        "18": NON_CANDIDATE_QUOTE,
+        "22": "This synthetic study measures retrieval precision under controlled conditions.",
+    }})
+    first = future_work.merge_ocr(prepared_path, ocr_path, tmp_path)
+    assert first["ocr_required_pages"] == []
+    assert {18, 22}.issubset(first["ocr_resolved_pages"])
+    assert next(item for item in first["source_pages"] if item["page"] == 18)["text"] == NON_CANDIDATE_QUOTE
+    assert finalize_prepared(tmp_path, first, NON_CANDIDATE_QUOTE, 18)["items"][0]["page"] == 18
+    write_prepared(prepared_path, first)
+    write_prepared(ocr_path, {"pages": {"19": SECOND_OCR_QUOTE}})
+    second = future_work.merge_ocr(prepared_path, ocr_path, tmp_path)
+    assert {18, 19, 22}.issubset(second["ocr_resolved_pages"])
+    assert second["ocr_required_pages"] == []
+    sources = {item["page"]: item for item in second["source_pages"]}
+    assert sources[18] == next(item for item in first["source_pages"] if item["page"] == 18)
+    assert sources[19]["text"] == SECOND_OCR_QUOTE
+    for item in original_sources:
+        if item["page"] not in {18, 19, 22}:
+            assert sources[item["page"]] == item
+    assert second["selection"] == prepared["selection"]
+    assert second["pdf_sha256"] == prepared["pdf_sha256"]
+    assert finalize_prepared(tmp_path, second, NON_CANDIDATE_QUOTE, 18)["items"][0]["page"] == 18
+    assert finalize_prepared(tmp_path, second, SECOND_OCR_QUOTE, 19)["items"][0]["page"] == 19
 
 
 if __name__ == "__main__":

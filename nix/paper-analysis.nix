@@ -162,16 +162,8 @@ let
     (stepAll "uv run \"$FACTS_SCRIPT\"" "\"$FACTS\"")
 
     (stepOnce
-      "运行一次确定性的 `future_work.py prepare`"
-      "运行一次确定性的 `\"$FUTURE_WORK\" prepare`")
-
-    (stepOnce
-      "Step 1.5 完成后运行 `future_work.py prepare`"
-      "Step 1.5 完成后运行 `\"$FUTURE_WORK\" prepare`")
-
-    (stepOnce
-      "好页保留 `PDF_RUNTIME_SCRIPT extract` 提取结果不动"
-      "好页保留 `\"$PDF_RUNTIME\" extract` 提取结果不动")
+      "不再运行 `PDF_RUNTIME_SCRIPT extract` 或另一次全页质量提取"
+      "不再运行 `\"$PDF_RUNTIME\" extract` 或另一次全页质量提取")
 
     (stepOnce
       "**normalized JSON** → 必须先经过 `paper_input.py` 确定性校验"
@@ -184,10 +176,6 @@ let
     (stepOnce
       "只有 `pdf_runtime.py validate-ocr-cache` 校验当前 PDF"
       "只有 `bin/pdf-runtime validate-ocr-cache` 校验当前 PDF")
-
-    (stepOnce
-      "若后续 `future_work.py prepare` 报告"
-      "若后续 `bin/future-work prepare` 报告")
 
     (stepOnce
       "2. 调用 `vision-tools` 的 `glance <页图> --ocr`（"
@@ -230,8 +218,8 @@ let
       "- Normalized JSON validator: run `<skill_dir>/bin/paper-input <absolute-json-path>` and use only its canonical output.")
 
     (stepOnce
-      "- Full-mode PDF extraction/rendering: run `uv run <absolute pdf_runtime.py> extract ...` and `uv run <absolute pdf_runtime.py> render ...`. The PEP 723 helper bootstraps `scholar-workflow-pdfx==0.1.0`, so APM installations do not depend on host PyMuPDF."
-      "- Full-mode PDF extraction/rendering: run `<skill_dir>/bin/pdf-runtime extract ...` and `<skill_dir>/bin/pdf-runtime render ...`. The fixed Nix runtime supplies `scholar-workflow-pdfx==0.1.0`, so installations do not depend on host PyMuPDF.")
+      "- Saved local-PDF full extraction: run `uv run <absolute future_work.py> prepare ...` once and reuse `source_pages`/`page_quality` for the full-text input and source validation. Other PDF runs retain `uv run <absolute pdf_runtime.py> extract ...`; all bad-page rendering retains `uv run <absolute pdf_runtime.py> render ...`. These PEP 723 helpers bootstrap `scholar-workflow-pdfx==0.1.0`, so APM installations do not depend on host PyMuPDF."
+      "- Saved local-PDF full extraction: run `<skill_dir>/bin/future-work prepare ...` once and reuse `source_pages`/`page_quality` for the full-text input and source validation. Other PDF runs retain `<skill_dir>/bin/pdf-runtime extract ...`; all bad-page rendering retains `<skill_dir>/bin/pdf-runtime render ...`. The fixed Nix runtime supplies `scholar-workflow-pdfx==0.1.0`, so installations do not depend on host PyMuPDF.")
 
     (stepOnce
       "- Standalone future-work helper: run `uv run <absolute future_work.py> ...`; PEP 723 metadata bootstraps `scholar-workflow-pdfx==0.1.0` without requiring a synced checkout."
@@ -250,16 +238,16 @@ let
       "use the installed `bin/pdf-runtime` helper.")
 
     (stepOnce
-      "Run `future_work.py prepare` for the source PDF before Step 3."
-      "Run `<skill_dir>/bin/future-work prepare` for the source PDF before Step 3.")
+      "Extract once with `future_work.py prepare` before Step 3;"
+      "Extract once with `<skill_dir>/bin/future-work prepare` before Step 3;")
 
     (stepOnce
-      "reuse the exact page OCR text through `future_work.py merge-ocr`"
-      "reuse the exact page OCR text through `<skill_dir>/bin/future-work merge-ocr`")
+      "the existing `pdf_runtime.py validate-ocr-cache` path"
+      "the existing `<skill_dir>/bin/pdf-runtime validate-ocr-cache` path")
 
     (stepOnce
-      "run `future_work.py upgrade-full-sidecar` against"
-      "run `<skill_dir>/bin/future-work upgrade-full-sidecar` against")
+      "run `future_work.py upgrade-full-sidecar --analysis"
+      "run `<skill_dir>/bin/future-work upgrade-full-sidecar --analysis")
 
     (stepRequire [
       "registered `paper-analysis` agent"

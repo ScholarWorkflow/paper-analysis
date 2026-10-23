@@ -8,6 +8,7 @@
 - Gate 2 完整 recipe：独立 reviewer APPROVED（2026-10-22 17:30 UTC，由主协调器转达）；22页例使用 last_pages=3 与用户条件一致。
 - TP3 修订：用户于 2026-10-23 授权补齐章节来源/上下文复用静态检查、重复引文首次定位、新 prepared 入口与连续 OCR 合并状态，以及实际解释器恢复路径。只复核这些受影响目标和 recipe；未受影响的 TP2 目标及步骤沿用上述历史审核，不据此推定 TP3 已获批准。
 - TP4 本轮修订：依据 [TP3 审核意见](https://github.com/ScholarWorkflow/paper-analysis/pull/23#pullrequestreview-5625681001)，仅澄清第3项失败后的文件状态及现有子进程检查的非候选输入、无兄弟候选文件和指纹继承条件；不新增测试类别。复核限这些受影响预期及步骤，其他目标、检查方法和 recipe 保持不变，不由作者推定当前关口通过。
+- TP4 操作修订 macOS-1：用户于 2026-10-23 明确要求忽略 Linux、只完成 Mac 部分。本轮将第3节环境与路径调整为 macOS，在当前独立工作树准备锁定依赖；第2节目标、输入、预期与检查方式不变。Linux 不再是本轮交付要求或阻塞项。
 - 执行计划正式审核：[EP4 审核记录](https://github.com/ScholarWorkflow/paper-analysis/pull/23#issuecomment-6360066817)（对应 `9ef70ebeb13fb84f142d2823b4050d0e7a3c7d28`）；仅为方案审核，不代表测试通过。
 - Gate 3 结果：NOT RUN。作者不自授 APPROVED/PASS；pytest 原始结果与独立审核结论分开。
 
@@ -29,13 +30,13 @@
 
 本轮仅准备测试资产；下列正式命令留给本地执行工程师，未在本轮运行。正式规则为 [Project Consensus](https://app.notion.com/p/3d60101a85f3815a8c43f271f2b4d91d) 与 [Test Engineer Rule](https://app.notion.com/p/3d80101a85f380d8a8f5ce528141e253)。本节补齐 TP4 的操作步骤，不变更第2节目标、预期和范围，不自授第一、第二关口通过。
 
-前提：Gate 1/2 独立通过；记录实际执行 commit SHA、Python/uv 版本、Linux 平台。仅使用云端临时目录，不访问用户论文目录或 Mac。fixture PDF 由测试内 PyMuPDF 生成，既有 binary fixture 从仓库读取；代码不会下载用户论文或访问模型服务。
+前提：Gate 1/2 独立通过；记录实际执行 commit SHA、Python/uv 版本、macOS 平台。仅在独立工作树和独立 `/tmp` 目录操作，不访问用户论文目录或其他用户状态。fixture PDF 由测试内 PyMuPDF 生成，既有 binary fixture 从仓库读取；代码不会下载用户论文或访问模型服务。
 
-TP2 记录的既有云端环境包元数据与当时 uv.lock 一致：pytest 8.4.2、pymupdf 1.28.2、scholar-workflow-pdfx 0.1.0。若该环境仍适用，只读复用其依赖，不同步或改写该环境；该历史记录不保证路径在本次运行时仍存在。
+macOS-1 已在当前独立工作树通过 `uv sync --locked` 准备依赖：pytest 8.4.2、pymupdf 1.28.2、scholar-workflow-pdfx 0.1.0，与当前 uv.lock 一致。默认环境为该工作树的 `.venv`，后续执行优先只读复用；不因计划提交编号变化重复安装。原 TP2 云端环境只保留为历史背景，不作为 macOS 的依赖或前提。
 
-一次必要预检：确认工作树/HEAD 为审核目标、目标测试文件存在、锁定开发环境可用，并将 `TEST_PYTHON` 设置为实际确认可用的解释器绝对路径。优先复用仍可用且依赖适配的 `/workspace/shared/paper-sentence-fix/.venv/bin/python`；若该环境不可用，只在当前目标仓库根目录按既有 `uv sync --locked` 准备锁定依赖，然后将 `TEST_PYTHON` 改为该次同步实际创建的解释器（默认 `$PWD/.venv/bin/python`；如已有 `UV_PROJECT_ENVIRONMENT` 配置，则使用其实际环境路径下的 `bin/python`）。两个准备分支择一，不重复安装，不改写他人的已有环境。记录实际解释器路径与发生的准备动作；准备失败即标记环境阻塞，不启动正式测试，不伪称产品失败。不得改 uv.lock、降级断言或替换依赖来取得通过。
+一次必要预检：确认工作树/HEAD 为审核目标、目标测试文件存在、锁定开发环境可用，并将 `TEST_PYTHON` 设置为实际确认可用的解释器绝对路径。使用当前工作树的 `.venv/bin/python`；如已有 `UV_PROJECT_ENVIRONMENT` 配置，采用该配置的实际环境路径，不能改写他人的环境。已有适配环境直接复用；仅在缺失或失效时按 `uv sync --locked` 恢复。记录实际解释器路径与发生的准备动作；准备失败即标记环境阻塞，不启动正式测试，不伪称产品失败。不得改 uv.lock、降级断言或替换依赖来取得通过。
 
-以下命令均在目标 Linux 工作树根目录执行。先确认第一、第二关口适用于 TP4，并核对本轮测试资产与随后完成的 EP4 产品实现已经在同一待测提交中；当前 `d56b11656897794665ae309900f3e6240c43fb46` 只有计划，不能作为已实现版本。创建独立输出目录，设定仅供本次用例写入的临时目录：
+以下命令均在目标 macOS 工作树根目录执行。先确认第一、第二关口适用于当前 TP4 及 macOS-1 操作补充，并核对测试资产与随后完成的 EP4 产品实现已经在同一待测提交中；起始提交 `d56b11656897794665ae309900f3e6240c43fb46` 只有计划，不能作为已实现版本。创建独立输出目录，设定仅供本次用例写入的临时目录：
 
 ```sh
 RUN_DIR=$(mktemp -d /tmp/fw-span-test.XXXXXX)
@@ -48,14 +49,20 @@ uv --version > "$RUN_DIR/uv-version.txt"
 uname -s > "$RUN_DIR/platform.txt"
 ```
 
-平台必须为 Linux；若不是，记录环境阻塞并停止。先直接检查已有解释器能否运行，不先搜索路径。仅检查解释器与依赖元数据，不导入产品或调用用例：
+平台必须为 macOS（`uname -s` 为 `Darwin`）。先直接检查当前工作树的解释器能否运行，不先搜索路径。仅检查解释器、依赖导入与元数据，不导入产品或调用用例：
 
 ```sh
-TEST_PYTHON=/workspace/shared/paper-sentence-fix/.venv/bin/python
+TEST_ENVIRONMENT="${UV_PROJECT_ENVIRONMENT:-$PWD/.venv}"
+case "$TEST_ENVIRONMENT" in
+  /*) ;;
+  *) TEST_ENVIRONMENT="$PWD/$TEST_ENVIRONMENT" ;;
+esac
+TEST_PYTHON="$TEST_ENVIRONMENT/bin/python"
 export TEST_PYTHON
 uv run --no-project --no-python-downloads --python "$TEST_PYTHON" python -c '
 import importlib.metadata, json, platform, sys
-print(json.dumps({"python": sys.version, "executable": sys.executable,
+import pymupdf, pytest, pdfx
+print(json.dumps({"python_version": list(sys.version_info[:3]), "executable": sys.executable,
     "platform": platform.system(), "packages": {name: importlib.metadata.version(name)
     for name in ("pytest", "pymupdf", "scholar-workflow-pdfx")}}))
 ' > "$RUN_DIR/precheck-existing.json" 2> "$RUN_DIR/precheck-existing.err"
@@ -67,7 +74,7 @@ print(json.dumps({"python": sys.version, "executable": sys.executable,
 uv sync --locked > "$RUN_DIR/sync.log" 2>&1
 ```
 
-同步失败立即停止。成功后以同步输出及实际 `UV_PROJECT_ENVIRONMENT` 配置为依据设置 `TEST_PYTHON`；默认是 `$PWD/.venv/bin/python`，不假定是历史路径。重新执行上面的纯元数据检查，输出另存为 `$RUN_DIR/precheck-prepared.json` 和 `$RUN_DIR/precheck-prepared.err`，不覆盖第一次记录。成功的那份文件为后续 `ENV_RECORD`；以其 `executable` 字段确认解释器的实际绝对路径：
+同步失败立即停止。成功后重新按当前 `UV_PROJECT_ENVIRONMENT` 配置或默认 `.venv` 设置 `TEST_PYTHON`，不采用云端历史路径。重新执行上面的依赖检查，输出另存为 `$RUN_DIR/precheck-prepared.json` 和 `$RUN_DIR/precheck-prepared.err`，不覆盖第一次记录。成功的那份文件为后续 `ENV_RECORD`；以其 `executable` 字段确认解释器的实际绝对路径：
 
 ```sh
 # 按实际采用的准备分支，二选一，不同时执行。
@@ -75,11 +82,12 @@ ENV_RECORD="$RUN_DIR/precheck-existing.json"
 # ENV_RECORD="$RUN_DIR/precheck-prepared.json"
 TEST_PYTHON=$(jq -er '.executable' "$ENV_RECORD")
 export TEST_PYTHON
-jq '{python, executable, platform, packages}' "$ENV_RECORD"
+jq '{python_version, executable, platform, packages}' "$ENV_RECORD"
 yq -p toml -o json '.package' uv.lock | jq '[.[] | select(.name == "pytest" or .name == "pymupdf" or .name == "scholar-workflow-pdfx") | {name, version}]' > "$RUN_DIR/locked-packages.json"
+jq -e --slurpfile locked "$RUN_DIR/locked-packages.json" '.platform == "Darwin" and (.python_version >= [3,11,0]) and (.packages == ($locked[0] | map({key: .name, value: .version}) | from_entries))' "$ENV_RECORD"
 ```
 
-仅当元数据为 Linux、解释器满足 Python >=3.11，且三个包与当前锁文件一致时继续。确认 `tests/test_future_work.py`、`tests/test_future_work_cli.py`、`tests/test_facts.py` 和原有 `tests/fixtures/` 输入就位。测试在 pytest 临时目录生成合成 PDF 与准备文件；使用当前解释器启动子进程，不访问模型或识别服务，不加载用户配置，不另需密钥。无额外用户授权操作；若后来引入外部服务，该操作不在本 recipe 授权内。
+仅当上述 `jq` 检查退出码为0时继续：平台为 macOS、解释器满足 Python >=3.11，且三个包与当前锁文件一致。确认 `tests/test_future_work.py`、`tests/test_future_work_cli.py`、`tests/test_facts.py` 和原有 `tests/fixtures/` 输入就位。测试在 pytest 临时目录生成合成 PDF 与准备文件；使用当前解释器启动子进程，不访问模型或识别服务，不加载用户配置，不另需密钥。无额外用户授权操作；若后来引入外部服务，该操作不在本 recipe 授权内。
 
 正式唯一主命令（仓库根目录，经 `uv run` 使用已确认的解释器，不同步依赖）：
 
@@ -108,7 +116,8 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$RUN_DIR/end.txt"
 - 目标：EP4 / TP4；起始提交 `d56b11656897794665ae309900f3e6240c43fb46`，产品基线 `eceade6b6d22a6114ecdd99b5a0c358869dfc798`。本轮只修改测试代码与本文件，不实现产品，不宣布 TP4 关口通过。
 - 第1项：`tests/test_future_work.py::test_non_candidate_page_has_complete_sources_and_upgrades`；第2项：同文件的同页连续、相邻跨页、重复引文首次位置用例；第3项：同文件拒绝参数组、升级失败及指纹失败，并在 CLI 中检查 validate 失败不写文件；第4项：同文件连续两次额外坏页合并；第5项：保留原单句/OCR/旧 CLI 与 `tests/test_facts.py`，补单候选规范引文及 ID 兼容和一次非候选 upgrade→facts 子进程链。没有额外测试文件、采集器或新的通过条件。
 - 公共合成输入函数留在现有 `tests/test_future_work.py`，由 CLI 用例复用；22页例无目录，末尾三页不含第18页原话，固定 `last_pages=3`。跨页例使用独立页眉/纯数字页码和真实断词；拒绝例保留页边重复正文。OCR 用明确模拟文字与质量状态，不调用识别服务。正式产物仍由产品入口产生，不在测试中补造成功 sidecar。
-- 本次有限预检：`uv --version` 为 `0.12.22`；指定云端解释器实际调用退出码为 `2`，宿主为 Darwin，不能在此满足 Linux 执行条件。两份测试源码只做语法解析成功，格式检查无错误；未导入测试模块或运行用例。记录位于本次独立 `/tmp/pr23-test-precheck.PAt1zf`，不入库。没有在 Mac 安装测试依赖、生成业务样本或运行产品入口。下一执行者须按第3节在目标 Linux 环境复用有效解释器或执行 `uv sync --locked`；此为明确环境缺项，不记产品失败。
+- macOS-1 有限预检：在当前独立工作树发现 `.venv` 不存在后，执行一次 `uv sync --locked`，退出码为0，未改锁文件。`uv 0.12.22`、Python `3.14.6`、macOS `arm64`；pytest `8.4.2`、pymupdf `1.28.2`、scholar-workflow-pdfx `0.1.0` 导入成功，结构化元数据与锁文件一致。解释器采用当前工作树 `$PWD/.venv/bin/python`，独立临时目录已确认位于本次 `/tmp` 目录；未导入产品或测试模块，未生成业务样本或运行用例。同步、元数据、隔离路径和退出码记录在 `/tmp/pr23-macos-precheck.8jOEC0`，不入库。
+- 前轮两份测试源码语法解析成功及格式检查结果继续复用，测试代码未改。原 `/tmp/pr23-test-precheck.PAt1zf` 仅为历史预检；其 Linux 缺项按用户最新决定撤回，不影响当前 macOS 交付。
 - 第一、第二关口：TP4 受影响部分仍待测试计划工程师复核；第三关口及正式用例均 `NOT RUN`。产品实现尚未交付，由本地执行工程师按 EP4 完成；不得把本轮准备审核写成产品或测试通过。
-- 测试准备符合性审核：专用 `implementation_reviewer` 已只读核对起始提交及本轮三份改动、两份完整计划、三份完整测试文件、全部既有夹具、`pyproject.toml`、`uv.lock`、实际入口与预检记录。结论为**部分完成**：测试代码、执行步骤及交接已落实，未发现需要修改的明确测试资产偏差；Linux 环境仍受阻。未运行正式测试，不代替关口批准。
-- 未完成项 `ENV-01`：本地执行工程师在目标 Linux 环境按第3节准备解释器及锁定依赖；`GATE-01`：测试计划工程师复核 TP4 受影响的第一、第二关口。两项分别处理，不增加测试或修改断言。后续由本地执行工程师完成 EP4 产品实现，在满足上述条件后执行唯一主命令，并交正式结果审核；本轮不宣称整个任务或业务测试已完成。
+- 测试准备符合性审核：专用 `implementation_reviewer` 前轮已核对全部准备产物，本轮由同一代理定向复核 macOS-1 的环境选择、解释器路径、依赖准备与复用、临时目录隔离、正式命令接线、交接及前次问题状态。结论为**完整（仅指本角色的 macOS 测试准备）**；未发现新增准备问题，无遗留环境阻塞。前次完整覆盖仍适用，未重跑正式测试；本结论不代表产品实现完成、业务测试通过或关口批准。
+- 问题状态：`ENV-01` 的 Linux 准备要求已按用户明确决定撤回，macOS 锁定依赖与隔离环境已准备。`GATE-01` 留交测试计划工程师复核 TP4 及 macOS-1 受影响的关口，不作为测试准备资产缺陷。后续由本地执行工程师复用 macOS 环境、完成 EP4 产品实现，在适用关口确认后执行唯一主命令并交正式结果审核。

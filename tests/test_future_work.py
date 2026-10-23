@@ -487,3 +487,88 @@ def test_two_extra_ocr_merges_keep_first_resolution_and_good_pages(tmp_path):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@pytest.mark.parametrize("edge_order", [("bottom", "top"), ("top", "bottom")])
+@pytest.mark.parametrize("edge_position", ["prefix", "suffix"])
+def test_mixed_geometric_edges_trim_only_extraction_ends(tmp_path, edge_order, edge_position):
+    pdf = tmp_path / "mixed-edges.pdf"
+    parts = ("Future work will evaluate", "adaptive retrieval across documents.")
+    with pymupdf.open() as document:
+        for number, text in enumerate(parts, 1):
+            page = document.new_page()
+            def add_edges():
+                for edge in edge_order:
+                    if edge == "top":
+                        page.insert_text((72, 26), "Synthetic repeated running header")
+                    else:
+                        page.insert_text((290, 820), str(number))
+            if edge_position == "prefix":
+                add_edges()
+            page.insert_text((72, 100), text)
+            if edge_position == "suffix":
+                add_edges()
+        document.save(pdf)
+    prepared = future_work.prepare(pdf, 2)
+    for source in prepared["source_pages"]:
+        assert len(source["edge_exclusions"]) == 2
+        start, end = future_work.source_bounds(source)
+        assert source["text"][start:end].strip() == parts[source["page"] - 1]
+    sources = prepared["source_pages"]
+    quote = " ".join(parts)
+    assert future_work.SourceLocator(prepared).locate(quote, 1) == (
+        1, sources[0]["text"].index(parts[0]),
+        2, sources[1]["text"].index(parts[1]) + len(parts[1]),
+    )
+    with pytest.raises(ValueError, match="quote and page"):
+        future_work.SourceLocator(prepared).locate(quote, 2)
+
+
+@pytest.mark.parametrize("blocker", ["unrepeated", "internal", "close"])
+def test_mixed_edge_fix_does_not_skip_unproven_or_internal_text(tmp_path, blocker):
+    pdf = tmp_path / "keep-body.pdf"
+    with pymupdf.open() as document:
+        for number in (1, 2):
+            page = document.new_page()
+            page.insert_text((72, 100), "Future work will evaluate" if number == 1 else "adaptive retrieval.")
+            page.insert_text((290, 820), str(number))
+            # Unrepeated edge text, a proven edge between body blocks, and
+            # insufficiently separated edge text must not enable stitching.
+            title = f"Different title {number}" if blocker == "unrepeated" else "Repeated title"
+            page.insert_text((72, 26), title)
+            if blocker == "internal":
+                page.insert_text((72, 200), "These controls remain mandatory.")
+            if blocker == "close":
+                page.insert_text((72, 40), f"These controls on page {number} remain mandatory.")
+        document.save(pdf)
+    prepared = future_work.prepare(pdf, 2)
+    with pytest.raises(ValueError, match="quote and page"):
+        future_work.SourceLocator(prepared).locate("Future work will evaluate adaptive retrieval.", 1)
+
+
+def test_source_bounds_rejects_internal_exclusion_even_with_valid_outer_runs():
+    source = {"page": 1, "text": "HabcXdefF", "edge_exclusions": [
+        {"start": 0, "end": 1, "text": "H", "edge": "bottom"},
+        {"start": 4, "end": 5, "text": "X", "edge": "top"},
+        {"start": 8, "end": 9, "text": "F", "edge": "top"},
+    ]}
+    with pytest.raises(ValueError, match="non-outer edge"):
+        future_work.source_bounds(source)
+
+
+def test_mixed_edge_runs_include_permitted_interblock_whitespace():
+    text = "Body text.\n  1\n\nRunning header\n "
+    source = {"page": 1, "text": text}
+    def block(value, edge, y0, y1):
+        start = text.index(value)
+        return {"edge": edge, "bbox": [0, y0, 100, y1], "lines": [{
+            "text": value, "start": start, "end": start + len(value) + 1, "height": 10,
+        }]}
+    blocks = [block("Body text.", None, 100, 200),
+              block("1", "bottom", 800, 810),
+              block("Running header", "top", 10, 20)]
+    other = {"page": 2, "text": text}
+    future_work.mark_edge_exclusions([source, other], [blocks, blocks])
+    start, end = future_work.source_bounds(source)
+    assert text[start:end] == "Body text.\n"
+    assert source["edge_exclusions"][0]["end"] == source["edge_exclusions"][1]["start"]

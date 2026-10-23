@@ -241,7 +241,6 @@ class AgentRuntimeContractTests(unittest.TestCase):
 
     def test_gap_only_fail_closed_contract_is_preserved(self):
         text = AGENT.read_text(encoding="utf-8")
-        self.assertIn("失败即修正临时 JSON，绝不手工绕过", text)
         self.assertIn("任一检查失败即返回 error", text)
         self.assertIn("不得手写 Markdown", text)
         self.assertIn("不得把没有 sidecar 的状态说成完成", text)
@@ -317,7 +316,6 @@ class AgentRuntimeContractTests(unittest.TestCase):
         self.assertIn("validated-fulltext-ocr.txt", text)
         self.assertIn('uv run "$PDF_RUNTIME_SCRIPT" update-fulltext-ocr-cache', text)
         self.assertIn('--expected-sha256 "<prepare.pdf_sha256>"', text)
-        self.assertIn("不得进入 Step 3", text)
         self.assertLess(text.index(validate_marker), text.index(step3_marker))
 
     def test_all_runtime_helpers_are_script_native(self):

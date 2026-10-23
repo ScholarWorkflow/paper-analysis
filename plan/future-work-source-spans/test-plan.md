@@ -2,11 +2,12 @@
 
 ## 版本与关口
 
-- Requirement: FW-SPAN-R1 及当前 EP4 记录的行为约定；Execution plan: FW-SPAN-EP4 (`execution-plan.md`)；Test plan: FW-SPAN-TP3（候选待审）。
+- Requirement: FW-SPAN-R1 及当前 EP4 记录的行为约定；Execution plan: FW-SPAN-EP4 (`execution-plan.md`)；Test plan: FW-SPAN-TP4（候选待审）。
 - Baseline: `eceade6b6d22a6114ecdd99b5a0c358869dfc798`。
 - Gate 1 测试范围：独立 reviewer 对 TP2 APPROVED（2026-10-22 17:25 UTC，由主协调器转达）。
 - Gate 2 完整 recipe：独立 reviewer APPROVED（2026-10-22 17:30 UTC，由主协调器转达）；22页例使用 last_pages=3 与用户条件一致。
-- 本次修订：用户于 2026-10-23 授权补齐章节来源/上下文复用静态检查、重复引文首次定位、新 prepared 入口与连续 OCR 合并状态，以及实际解释器恢复路径。只复核这些受影响目标和 recipe；未受影响的 TP2 目标及步骤沿用上述历史审核，不据此推定 TP3 已获批准。
+- TP3 修订：用户于 2026-10-23 授权补齐章节来源/上下文复用静态检查、重复引文首次定位、新 prepared 入口与连续 OCR 合并状态，以及实际解释器恢复路径。只复核这些受影响目标和 recipe；未受影响的 TP2 目标及步骤沿用上述历史审核，不据此推定 TP3 已获批准。
+- TP4 本轮修订：依据 [TP3 审核意见](https://github.com/ScholarWorkflow/paper-analysis/pull/23#pullrequestreview-5625681001)，仅澄清第3项失败后的文件状态及现有子进程检查的非候选输入、无兄弟候选文件和指纹继承条件；不新增测试类别。复核限这些受影响预期及步骤，其他目标、检查方法和 recipe 保持不变，不由作者推定当前关口通过。
 - 执行计划正式审核：[EP4 审核记录](https://github.com/ScholarWorkflow/paper-analysis/pull/23#issuecomment-6360066817)（对应 `9ef70ebeb13fb84f142d2823b4050d0e7a3c7d28`）；仅为方案审核，不代表测试通过。
 - Gate 3 结果：NOT RUN。作者不自授 APPROVED/PASS；pytest 原始结果与独立审核结论分开。
 
@@ -18,11 +19,11 @@
 
 1. 候选之外的真原文：合成 22 页可读 PDF，第 18 页含 `in the future` / `we are planning to`、无目录且不命中现有短语，末尾三页无该句。证明 p18 未入 candidates，但 source_pages 完整，upgrade 成功且 quote/page/fingerprint 正确。不得通过改 last-pages 或词表制造通过。
 2. 连续片段：同页两句作为一条引用成功；相邻页跨页句在中间有按计划可识别的页码/重复边缘行时成功，page=start，source 保留范围，两个片段的原文位置可核查。例子同时含真实行末断词，确保仅有据规范化。复用同一合成材料放置重复引文：无明确页码时选择物理页码、页内偏移最早的有效准确匹配；通过现有定位结果核对位置，不为测试新增公开字段或判定器。显式错误起始页仍由第3项覆盖。
-3. 错误仍拒绝：以同一小 PDF 为输入，拒绝原文不存在/词义改写、跳过正文中间句（将被跳句放在页边区域，证明仅在8%区域或重复并不能把正文当噪声删掉）、错误起始页或非相邻页拼接、普通行内连字符被删除，以及外传 PDF digest 与 prepared 不一致。失败前后 analysis/sidecar 无成功写入。这些是新增定位直接相关的反例，不扩展无关边界矩阵。
+3. 错误仍拒绝：以同一小 PDF 为输入，拒绝原文不存在/词义改写、跳过正文中间句（将被跳句放在页边区域，证明仅在8%区域或重复并不能把正文当噪声删掉）、错误起始页或非相邻页拼接、普通行内连字符被删除，以及外传 PDF digest 与 prepared 不一致。失败状态按实际受检入口判断：validate 只校验，不改写分析或 sidecar；finalize/upgrade-full-sidecar 的校验失败不能写出对应的有效 sidecar，既有分析文件不因失败而被修补。保存的本地 PDF full 已先写入的初始 Markdown 可以保留，不能要求失败后不存在分析文件；流程仍须报告未完成，不继续生成 facts sidecar，也不报告三文件完成。沿用本项既有拒绝场景观察对应状态，不在每个入口重复全部反例。这些是新增定位直接相关的反例，不扩展无关边界矩阵。
 4. 坏页复用：在现有 OCR merge 测试中核对 source_pages 随该坏页 OCR 同步更新，质量未解决不能从坏文字保存；额外非候选坏页可用已获得的页文本 merge，其他好页不变。在同一 prepared 上连续合并两个实际引用的额外坏页；第二次合并后，第一次已解决页的文字与已解决状态仍保留，其他页不变。测试用明确模拟 OCR 文本，不调用识别服务，不声称 OCR 准确率测试。
 5. 兼容：保留原 candidates-only CLI 成功入口；既有正常单句以及真实行末断词的单candidate引用保留原candidate规范quote/ID，而不是随传入quote写法变化；新 source-backed sidecar schema=1 / extractor=future-work-v1 / 旧 item 字段正常，被现有 facts.finalize 接受并只注入该 ID。旧已存在 sidecar 不由本功能批量重写。用现有 facts 测试确认错 PDF 链拒绝，不另造 Contact 判定器。
 
-对应入口：在 `tests/test_future_work.py` 添加 1–4 的必要用例并保留原单句/OCR基线；`tests/test_future_work_cli.py` 保留旧 CLI 入口并添加一次 source-backed upgrade→facts 的真实子进程链；`tests/test_facts.py` 复用既有 ID/指纹覆盖，不扩展 facts 产品功能。复用现有 CLI fixture，以含 source_pages 的 prepare.json 分别检查 validate 与 finalize 的正常入口和必要产物接线；连续匹配规则及反例由已有定位用例覆盖，不在各 CLI 重复整套矩阵。
+对应入口：在 `tests/test_future_work.py` 添加 1–4 的必要用例并保留原单句/OCR基线；`tests/test_future_work_cli.py` 保留旧 CLI 入口并添加一次 source-backed upgrade→facts 的真实子进程链；`tests/test_facts.py` 复用既有 ID/指纹覆盖，不扩展 facts 产品功能。复用第1项合成 PDF 第18页的非候选引文及含 source_pages 的 prepare.json，在现有 CLI fixture 中分别检查 validate 与 finalize 的正常入口；finalize 不传 `--pdf-sha256`，核对成功结果、引文页码和从 prepared 采用的指纹。上述一次 upgrade→facts 子进程链在 prepared 同目录不提供 `candidates.json`，用同一非候选引文验证 upgrade-full-sidecar 并核对结果、页码和指纹，不另加第二条链。连续匹配规则及反例由已有定位用例覆盖，不在各 CLI 重复整套矩阵。
 
 ## 3. 执行 recipe
 

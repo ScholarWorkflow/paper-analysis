@@ -6,7 +6,7 @@
 - Plan revision: FW-SPAN-EP4。本文件是合并全部有效决定后的唯一完整执行计划，替代 EP3；仅补足保存的本地 PDF 全文模式的未来工作原文来源规则及其实施位置，其余方案沿用 EP3。
 - Repository baseline: `eceade6b6d22a6114ecdd99b5a0c358869dfc798`（`master`）；本次修订在 PR #23 现有分支上进行，实际实现前核对分支和基线的语义差异。
 - Proposed review status: pending。EP2 的历史审核记录与 EP3 的计划审核均不能自动批准 EP4；由独立 reviewer 对本次修订及必要连带影响复核。
-- 唯一测试计划：同目录 `test-plan.md`（FW-SPAN-TP3）。本计划不擅自增加测试项目；测试计划负责人仅按本轮实际改变的要求检查现有范围及执行步骤。
+- 唯一测试计划：同目录 `test-plan.md`（FW-SPAN-TP4）。本计划不擅自增加测试项目；测试计划负责人仅按本轮实际改变的要求检查现有范围及执行步骤。
 
 ## 1. 有效需求和边界
 
@@ -120,4 +120,4 @@ merge-ocr 除既有 required 页外，允许合并 page_quality 为 untrusted/em
 - EP3 触发：2026-10-23 用户直接澄清取消跨拉取请求关联要求；跨页仅保留低优先有限支持；模型判断原文语义完整性；重复引文无明确页码时取首；全文模式维持先写 Markdown、后升级校验、最后 facts 的真实保存顺序，并避免重复发送全文。
 - EP4 触发：2026-10-23 对 EP3 的计划审核发现，现有 agent 的章节来源白名单会使 PDF full 模式下真实未来工作在模型选句时被遗漏。本次明确取消这一模式的章节白名单；没有改动语义判断归属、摘要输入的尾部要求或其他已冻结的方案。
 - 受影响决定：PDF full 的未来工作来源资格、模型与 helper 的职责边界、重复定位规则、跨页出处生成、分析文件写入与 sidecar 校验的先后顺序、模型上下文复用。原有同源指纹、OCR 授权、旧候选兼容、正式 sidecar/facts 格式未发生语义变化。
-- 本文件作者状态：`Proposed review status: pending`。EP4 的正式执行计划审核结论见 [2026-10-23 07:44 UTC 审核记录](https://github.com/ScholarWorkflow/paper-analysis/pull/23#issuecomment-6360066817)，对应版本 `9ef70ebeb13fb84f142d2823b4050d0e7a3c7d28`；结论归 reviewer，不由本文作者自授。本次只更正实施步骤的 EP3 笔误、同步 TP3 版本指针并补审核引用，不改变 EP4 方案。测试范围与具体执行记录遵从独立测试规则，不把计划审核写成产品或测试通过。
+- 本文件作者状态：`Proposed review status: pending`。EP4 的正式执行计划审核结论见 [2026-10-23 07:44 UTC 审核记录](https://github.com/ScholarWorkflow/paper-analysis/pull/23#issuecomment-6360066817)，对应版本 `9ef70ebeb13fb84f142d2823b4050d0e7a3c7d28`；结论归 reviewer，不由本文作者自授。本次只更正实施步骤的 EP3 笔误、同步当前测试计划版本指针并补审核引用，不改变 EP4 方案。测试范围与具体执行记录遵从独立测试规则，不把计划审核写成产品或测试通过。
